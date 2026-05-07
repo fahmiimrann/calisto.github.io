@@ -1255,6 +1255,7 @@ function AuthPage({ onAuth }) {
     const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "doctor" });
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     function handleChange(e) {
         setForm(f => ({ ...f, [e.target.name]: e.target.value }));
     }
@@ -1350,14 +1351,34 @@ function AuthPage({ onAuth }) {
                         name="username" value={form.username} onChange={handleChange} placeholder="Username"
                         className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
                     />
-                    <input type="password" name="password" autoComplete="current-password" value={form.password} onChange={handleChange} placeholder="Password"
-                        className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
-                    />
+                    <div className="relative">
+                        <input type={showPassword ? "text" : "password"} name="password" autoComplete={register ? "new-password" : "current-password"} value={form.password} onChange={handleChange} placeholder="Password"
+                            className="w-full px-4 py-3 pr-12 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                        />
+                        <button
+                            type="button"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                            onClick={() => setShowPassword(v => !v)}
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                            <i className={`fa-solid ${showPassword ? "fa-eye-slash" : "fa-eye"}`}></i>
+                        </button>
+                    </div>
                     {register && (
                         <>
-                        <input type="password" name="confirm" value={form.confirm} onChange={handleChange} placeholder="Confirm Password"
-                            className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
-                        />
+                        <div className="relative">
+                            <input type={showPassword ? "text" : "password"} name="confirm" value={form.confirm} onChange={handleChange} placeholder="Confirm Password"
+                                className="w-full px-4 py-3 pr-12 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                                onClick={() => setShowPassword(v => !v)}
+                                aria-label={showPassword ? "Hide password" : "Show password"}
+                            >
+                                <i className={`fa-solid ${showPassword ? "fa-eye-slash" : "fa-eye"}`}></i>
+                            </button>
+                        </div>
                         <select name="type" value={form.type} onChange={handleChange}
                                 className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none">
                             <option value="doctor">Doctor</option>
