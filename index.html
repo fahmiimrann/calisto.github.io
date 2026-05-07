@@ -176,7 +176,7 @@ const { useState, useEffect, useRef, useMemo } = React;
 const API_BASE_URL = "";
 
 function isBackendConfigured() {
-    return API_BASE_URL.trim() && !API_BASE_URL.includes("your-render-backend-name");
+    return API_BASE_URL.trim() && !API_BASE_URL.includes("https://ocuvision-backend.onrender.com");
 }
 
 async function apiRequest(path, options = {}) {
