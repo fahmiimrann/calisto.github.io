@@ -171,6 +171,51 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
+// Replace this with your Render backend URL after deployment.
+// Example: const API_BASE_URL = "https://ocuvision-backend.onrender.com";
+const API_BASE_URL = "";
+
+function isBackendConfigured() {
+    return API_BASE_URL.trim() && !API_BASE_URL.includes("your-render-backend-name");
+}
+
+async function apiRequest(path, options = {}) {
+    const response = await fetch(`${API_BASE_URL}${path}`, options);
+    const contentType = response.headers.get("content-type") || "";
+    const data = contentType.includes("application/json") ? await response.json() : {};
+
+    if (!response.ok) {
+        throw new Error(data.error || data.message || "Backend request failed.");
+    }
+
+    return data;
+}
+
+async function dataUrlToFile(dataUrl, fileName) {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    return new File([blob], fileName, { type: blob.type || "image/png" });
+}
+
+function normalizeAnalysisResult(data, fileName) {
+    const severity = data.severity || data.status || "Healthy";
+    const status = data.status || (
+        severity === "Critical" ? "Alert" :
+        severity === "Moderate" ? "Warning" :
+        "Optimal"
+    );
+    const confidence = String(data.confidence || data.score || "0").replace("%", "");
+    const diagnosis = data.diagnosis || data.result || "No urgent retinal abnormality detected";
+
+    return {
+        status,
+        score: confidence,
+        diagnosis: diagnosis.startsWith("Detection Result:") ? diagnosis : `Detection Result: ${diagnosis}`,
+        notes: data.notes || data.recommendation || "AI backend analysis completed. Expert clinical validation is recommended.",
+        fileName
+    };
+}
+
 // --- Mock Data ---
 const MOCK_USERS = [
     { username: "1", password: "1", type: "intern", name: "Fahmi" },
@@ -629,26 +674,52 @@ const Diagnostics = ({ onResultSubmit, showToast }) => {
         }
     }
 
-    function startScan(source, label) {
+    async function startScan(source, label, imageFile = file) {
         setImgSrc(source || imgSrc);
-        setFile(file || { name: label || 'Captured image' });
+        setFile(imageFile || file || { name: label || 'Captured image' });
         setStage('scanning');
         setProgress(0);
+        const fileName = label || imageFile?.name || file?.name || 'screening-image.png';
         let value = 0;
         const timer = setInterval(() => {
             value += 4;
             setProgress(Math.min(value, 100));
             if (value >= 100) {
                 clearInterval(timer);
-                const pick = [
-                    { status: 'Alert', score: '94.8', diagnosis: 'Detection Result: Diabetic Retinopathy', notes: 'Multiple microaneurysms and intraretinal hemorrhages detected. Expert validation recommended.' },
-                    { status: 'Warning', score: '89.3', diagnosis: 'Early Glaucoma indicators detected', notes: 'Cup-to-disc ratio and vessel morphology should be reviewed by an ophthalmologist.' },
-                    { status: 'Optimal', score: '98.7', diagnosis: 'No urgent retinal abnormality detected', notes: 'Fundus pattern is within baseline range for this simulated screening.' }
-                ][Math.floor(Math.random() * 3)];
-                setTimeout(() => {
-                    setResult({ ...pick, fileName: label || file?.name || 'screening-image.png' });
+                setTimeout(async () => {
+                    try {
+                        let finalResult;
+
+                        if (isBackendConfigured()) {
+                            const uploadFile = imageFile || (source?.startsWith('data:') ? await dataUrlToFile(source, fileName) : null);
+                            if (!uploadFile) {
+                                throw new Error('No image file is available to send to the backend.');
+                            }
+
+                            const formData = new FormData();
+                            formData.append('image', uploadFile);
+
+                            const data = await apiRequest('/api/analyze', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            finalResult = normalizeAnalysisResult(data, fileName);
+                        } else {
+                            finalResult = [
+                                { status: 'Alert', score: '94.8', diagnosis: 'Detection Result: Diabetic Retinopathy', notes: 'Multiple microaneurysms and intraretinal hemorrhages detected. Expert validation recommended.' },
+                                { status: 'Warning', score: '89.3', diagnosis: 'Early Glaucoma indicators detected', notes: 'Cup-to-disc ratio and vessel morphology should be reviewed by an ophthalmologist.' },
+                                { status: 'Optimal', score: '98.7', diagnosis: 'No urgent retinal abnormality detected', notes: 'Fundus pattern is within baseline range for this simulated screening.' }
+                            ][Math.floor(Math.random() * 3)];
+                            finalResult = { ...finalResult, fileName };
+                        }
+
+                    setResult(finalResult);
                     setStage('results');
-                    onResultSubmit && onResultSubmit(pick);
+                    onResultSubmit && onResultSubmit(finalResult);
+                    } catch (err) {
+                        setStage('connect');
+                        showToast && showToast(err.message || 'Backend analysis failed.');
+                    }
                 }, 350);
             }
         }, 80);
@@ -676,7 +747,7 @@ const Diagnostics = ({ onResultSubmit, showToast }) => {
         reader.onload = evt => {
             setImgSrc(evt.target.result);
             showToast && showToast('Image file loaded.');
-            startScan(evt.target.result, selected.name);
+            startScan(evt.target.result, selected.name, selected);
         };
         reader.readAsDataURL(selected);
     }
@@ -1183,10 +1254,11 @@ function AuthPage({ onAuth }) {
     const [register, setRegister] = useState(false);
     const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "doctor" });
     const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
     function handleChange(e) {
         setForm(f => ({ ...f, [e.target.name]: e.target.value }));
     }
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
         setError("");
         if (register) {
@@ -1196,6 +1268,29 @@ function AuthPage({ onAuth }) {
                 return setError("Passwords don't match.");
             if (form.password.length < 4)
                 return setError("Password too short.");
+
+            if (isBackendConfigured()) {
+                try {
+                    setLoading(true);
+                    const data = await apiRequest('/api/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: form.name,
+                            username: form.username,
+                            password: form.password,
+                            type: form.type
+                        })
+                    });
+                    onAuth(data.user || { username: form.username, type: form.type, name: form.name });
+                } catch (err) {
+                    setError(err.message || "Registration failed.");
+                } finally {
+                    setLoading(false);
+                }
+                return;
+            }
+
             // mock: username must be unique
             if (MOCK_USERS.find(u=>u.username===form.username))
                 return setError("Username taken.");
@@ -1208,6 +1303,26 @@ function AuthPage({ onAuth }) {
             });
             onAuth({ username: form.username, type: form.type, name: form.name });
         } else {
+            if (isBackendConfigured()) {
+                try {
+                    setLoading(true);
+                    const data = await apiRequest('/api/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: form.username,
+                            password: form.password
+                        })
+                    });
+                    onAuth(data.user || data);
+                } catch (err) {
+                    setError(err.message || "Login failed.");
+                } finally {
+                    setLoading(false);
+                }
+                return;
+            }
+
             const found = MOCK_USERS.find(
                 u=>u.username===form.username && u.password===form.password
             );
@@ -1253,8 +1368,8 @@ function AuthPage({ onAuth }) {
                     )}
                 </div>
                 {error && <div className="text-red-500 text-sm -mb-4">{error}</div>}
-                <button type="submit" className="w-full py-3 mt-1 rounded-xl premium-gradient text-white font-bold shadow-lg hover:opacity-90 transition">
-                    {register ? "Register" : "Sign In"}
+                <button type="submit" disabled={loading} className="w-full py-3 mt-1 rounded-xl premium-gradient text-white font-bold shadow-lg hover:opacity-90 disabled:opacity-60 transition">
+                    {loading ? "Please wait..." : register ? "Register" : "Sign In"}
                 </button>
                 <div className="text-xs text-center text-slate-400">
                     {register ? "Already have an account?" : "New user?"}{" "}
