@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OcuVision AI | Premium Ophthalmic Intelligence</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background:
+                radial-gradient(circle at 12% 14%, rgba(190, 232, 221, 0.62) 0, transparent 30%),
+                radial-gradient(circle at 86% 8%, rgba(221, 235, 255, 0.72) 0, transparent 28%),
+                linear-gradient(135deg, #f8f5ef 0%, #ffffff 42%, #eef6f2 100%);
+            background-attachment: fixed;
+            color: #1a1a1e;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .video-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background: #f8f5ef;
+            pointer-events: none;
+        }
+
+        .video-backdrop video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.35;
+            filter: saturate(0.82) contrast(1.02) brightness(1.08);
+        }
+
+        .video-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            background:
+                linear-gradient(135deg, rgba(248,245,239,0.9), rgba(255,255,255,0.78) 42%, rgba(238,246,242,0.88)),
+                radial-gradient(circle at 80% 12%, rgba(221,235,255,0.55), transparent 34%);
+        }
+
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        body::before {
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(26, 26, 30, 0.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(26, 26, 30, 0.035) 1px, transparent 1px);
+            background-size: 72px 72px;
+            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.45), transparent 72%);
+        }
+
+        body::after {
+            width: 46vw;
+            height: 46vw;
+            right: -18vw;
+            bottom: -24vw;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(36, 76, 62, 0.18), transparent 68%);
+            filter: blur(8px);
+        }
+
+        .app-shell,
+        .auth-shell {
+            position: relative;
+            z-index: 1;
+        }
+
+        .glass-sidebar {
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(22px);
+            border-right: 1px solid rgba(255,255,255,0.62);
+            box-shadow: 18px 0 50px rgba(24, 39, 75, 0.05);
+        }
+
+        .calisto-card {
+            background: rgba(255, 255, 255, 0.82);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(255,255,255,0.7);
+            box-shadow: 0 24px 70px -48px rgba(24, 39, 75, 0.45);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .calisto-card:hover {
+            border-color: rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 26px 60px -42px rgba(24, 39, 75, 0.5);
+        }
+
+        .nav-link {
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .nav-link.active {
+            color: #1a1a1e;
+            font-weight: 600;
+        }
+
+        .nav-link.active::after {
+            content: '';
+            position: absolute;
+            left: -24px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 16px;
+            background: #1a1a1e;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .scan-glow {
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+            border: 2px dashed #e2e8f0;
+        }
+
+        .premium-gradient {
+            background: linear-gradient(135deg, #1a1a1e 0%, #334155 100%);
+        }
+
+        .soft-chip {
+            background: rgba(248, 250, 252, 0.78);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        
+        .toast-anim {
+          animation: toast-in 0.4s cubic-bezier(.4,0,.2,1);
+        }
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateY(10px);}
+          to { opacity: 1; transform: translateY(0);}
+        }
+    </style>
+</head>
+<body>
+<div class="video-backdrop" aria-hidden="true">
+    <video autoplay muted loop playsinline poster="Background_Video.mp4">
+        <source src="Background_Video.mp4" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+</div>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// --- Mock Data ---
+const MOCK_USERS = [
+    { username: "1", password: "1", type: "intern", name: "Fahmi" },
+    { username: "doctor", password: "ocularxr", type: "doctor", name: "Dr. Julian Voss" },
+    { username: "nurse", password: "nurs3", type: "nurse", name: "Nurse Meera Syed" }
+];
+const MOCK_RECORDS = [
+    { id: 'OCU-9921', patient: "Elena Rodriguez", age: 37, date: "2026-04-29", result: "Healthy", confidence: "99.2%", doctor: "Dr. Julian Voss", severity: "Healthy" },
+    { id: 'OCU-9922', patient: "Marcus Chen", age: 41, date: "2026-04-28", result: "Early Glaucoma", confidence: "87.4%", doctor: "Dr. Julian Voss", severity: "Moderate" },
+    { id: 'OCU-9923', patient: "Sarah Miller", age: 26, date: "2026-04-27", result: "Healthy", confidence: "98.8%", doctor: "Dr. Julian Voss", severity: "Healthy" },
+    { id: 'OCU-1125', patient: "Aliyah Rahman", age: 59, date: "2026-04-26", result: "Diabetic Retinopathy", confidence: "82.0%", doctor: "Nurse Meera Syed", severity: "Critical" },
+    { id: 'OCU-1126', patient: "Paul Garnier", age: 72, date: "2026-04-24", result: "AMD", confidence: "91.6%", doctor: "Dr. Julian Voss", severity: "Moderate" },
+    { id: 'OCU-1127', patient: "Noor Fatimah", age: 64, date: "2026-04-22", result: "Cataract", confidence: "93.1%", doctor: "Nurse Meera Syed", severity: "Moderate" },
+    { id: 'OCU-1128', patient: "Tan Wei", age: 48, date: "2026-04-20", result: "Glaucoma", confidence: "90.8%", doctor: "Dr. Julian Voss", severity: "Critical" },
+    { id: 'OCU-1129', patient: "Siti Aminah", age: 54, date: "2026-04-18", result: "Healthy", confidence: "98.1%", doctor: "Nurse Meera Syed", severity: "Healthy" }
+];
+const MOCK_PATIENTS = [
+    { id: "P-1001", name: "Elena Rodriguez", age: 37, gender: "Female", last_scan: "2023-10-24" },
+    { id: "P-1002", name: "Marcus Chen", age: 41, gender: "Male", last_scan: "2023-10-23" },
+    { id: "P-1003", name: "Sarah Miller", age: 26, gender: "Female", last_scan: "2023-10-22" },
+    { id: "P-1004", name: "Aliyah Rahman", age: 59, gender: "Female", last_scan: "2023-11-02" },
+    { id: "P-1005", name: "Paul Garnier", age: 72, gender: "Male", last_scan: "2023-09-15" }
+];
+const MOCK_NOTIFICATIONS = [
+    { id: 1, message: "Critical Alert: Diabetic Retinopathy found.", time: "5m" },
+    { id: 2, message: "System: New version 4.3 deployed.", time: "2h" }
+];
+const MOCK_SCREENING_VOLUME = [
+    { day: "Mon", scans: 24, color: "#3b82f6" },
+    { day: "Tue", scans: 41, color: "#10b981" },
+    { day: "Wed", scans: 32, color: "#f59e0b" },
+    { day: "Thu", scans: 58, color: "#8b5cf6" },
+    { day: "Fri", scans: 47, color: "#ec4899" },
+    { day: "Sat", scans: 36, color: "#06b6d4" },
+    { day: "Sun", scans: 52, color: "#ef4444" }
+];
+
+function Toast({ message, onClose }) {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 2300);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+    return (
+        <div className="fixed bottom-8 right-8 bg-white shadow-xl border border-slate-300 px-5 py-3 rounded-xl flex items-center gap-4 text-slate-800 toast-anim z-50 animate-in fade-in">
+            <i className="fa-solid fa-circle-check text-emerald-600"></i>
+            <span className="font-medium">{message}</span>
+        </div>
+    );
+}
+
+function useToast() {
+    const [toast, setToast] = useState(null);
+    function triggerToast(msg) {
+        setToast(msg);
+    }
+    function ToastComponent() {
+        return toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null;
+    }
+    return [ToastComponent, triggerToast];
+}
+
+const Sidebar = ({ currentView, setView, onLogout, user }) => {
+    const menuItems = [
+        { id: 'dashboard', label: 'Overview', icon: 'fa-grid-2' },
+        { id: 'screening', label: 'Diagnostics', icon: 'fa-microscope' },
+        { id: 'records', label: 'Patient Registry', icon: 'fa-folder-open' },
+        { id: 'analytics', label: 'Insights', icon: 'fa-chart-line' },
+        { id: 'settings', label: 'Preferences', icon: 'fa-sliders' },
+    ];
+    return (
+        <aside className="w-72 glass-sidebar h-screen fixed left-0 top-0 flex flex-col p-8 z-20">
+            <div className="mb-12 flex items-center gap-3">
+                <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center text-white">
+                    <i className="fa-solid fa-eye text-lg"></i>
+                </div>
+                <span className="text-xl font-bold tracking-tight text-[#1a1a1e] cursor-pointer" onClick={() => setView('dashboard')}>OCUVISION</span>
+            </div>
+            <nav className="flex-1 space-y-2">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-bold mb-4 ml-2">Platform</p>
+                {menuItems.map(item => (
+                    <button
+                        key={item.id}
+                        onClick={() => setView(item.id)}
+                        className={`nav-link w-full flex items-center gap-4 px-4 py-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 ${
+                            currentView === item.id ? 'active text-slate-900 bg-slate-50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                        tabIndex={0}
+                        aria-current={currentView === item.id ? "page" : undefined}
+                    >
+                        <i className={`fa-solid ${item.icon} w-5`}></i>
+                        {item.label}
+                    </button>
+                ))}
+            </nav>
+            <div className="mt-auto pt-8 border-t border-slate-100">
+                <div className="flex items-center gap-3 p-2">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                        <img src="IMG_5272.jpg" alt={user?.name || "User"} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                        <p className="text-sm font-semibold truncate">{user?.name || "Clinician"}</p>
+                        <p className="text-xs text-slate-400 truncate">{user?.type ? user.type.charAt(0).toUpperCase()+user.type.slice(1) : "User"}</p>
+                    </div>
+                    <button className="text-slate-400 hover:text-red-500 transition-colors" onClick={onLogout} title="Logout" tabIndex={0}>
+                        <i className="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+    );
+};
+
+// Interactive Header Notifications Dropdown
+function NotificationBell({ notifications, clearAll }) {
+    const [open, setOpen] = useState(false);
+    const bellRef = useRef();
+    useEffect(() => {
+        if (!open) return;
+        function listener(e) {
+          if (!bellRef.current?.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener("mousedown", listener, true);
+        return () => document.removeEventListener("mousedown", listener, true);
+    }, [open]);
+    return (
+        <div className="relative" ref={bellRef}>
+            <button
+                className="relative text-slate-400 hover:text-slate-900 transition-colors focus:ring-2 focus:ring-blue-200 rounded-full"
+                onClick={() => setOpen(open => !open)}
+                aria-label="Show Notifications"
+            >
+                <i className="fa-solid fa-bell text-xl"></i>
+                {notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-[#fcfcfd]"></span>
+                )}
+            </button>
+            {open && (
+                <div className="absolute right-0 mt-2 w-72 bg-white shadow-xl rounded-xl border p-4 z-30 animate-in fade-in">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="font-bold text-slate-900">Notifications</span>
+                        {notifications.length > 0 && 
+                            <button className="text-xs text-blue-500 hover:underline" onClick={clearAll}>Clear All</button>
+                        }
+                    </div>
+                    <div>
+                        {notifications.length === 0 &&
+                            <span className="block py-3 text-sm text-slate-400">No notifications!</span>
+                        }
+                        {notifications.map(n => (
+                            <div key={n.id} className="flex items-start gap-2 border-b py-2 last:border-b-0">
+                                <i className={`fa-solid ${n.message.startsWith("Critical") ? "fa-triangle-exclamation text-red-500" : "fa-bolt-lightning text-blue-400"}`}></i>
+                                <div className="flex-1">
+                                    <p className="text-xs text-slate-700">{n.message}</p>
+                                    <span className="text-[10px] text-slate-400">{n.time} ago</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function GlobalSearch({ onPickRecord, setView }) {
+    const [term, setTerm] = useState("");
+    const [open, setOpen] = useState(false);
+    const [activeIdx, setActiveIdx] = useState(0);
+    const containerRef = useRef();
+
+    useEffect(() => {
+        if (!open) return;
+        function clickAway(e) {
+            if (!containerRef.current?.contains(e.target)) setOpen(false);
+        }
+        function escKey(e) { if (e.key === "Escape") setOpen(false); }
+        document.addEventListener("mousedown", clickAway, true);
+        document.addEventListener("keydown", escKey);
+        return () => {
+            document.removeEventListener("mousedown", clickAway, true);
+            document.removeEventListener("keydown", escKey);
+        };
+    }, [open]);
+
+    const q = term.trim().toLowerCase();
+    const recordHits = q ? MOCK_RECORDS.filter(r =>
+        r.patient.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q) ||
+        r.result.toLowerCase().includes(q) ||
+        r.severity.toLowerCase().includes(q) ||
+        r.doctor.toLowerCase().includes(q)
+    ).slice(0, 6) : [];
+    const patientHits = q ? MOCK_PATIENTS.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q)
+    ).slice(0, 4) : [];
+    const totalHits = recordHits.length + patientHits.length;
+
+    function pick(idx) {
+        if (idx < recordHits.length) {
+            onPickRecord(recordHits[idx]);
+        } else {
+            setView('records');
+        }
+        setOpen(false);
+        setTerm("");
+    }
+
+    function handleKey(e) {
+        if (!open || totalHits === 0) return;
+        if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, totalHits - 1)); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+        else if (e.key === "Enter") { e.preventDefault(); pick(activeIdx); }
+    }
+
+    return (
+        <div className="relative w-80" ref={containerRef}>
+            <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+            <input
+                type="text"
+                placeholder="Search patients, records, diseases..."
+                value={term}
+                onChange={e => { setTerm(e.target.value); setOpen(true); setActiveIdx(0); }}
+                onFocus={() => term && setOpen(true)}
+                onKeyDown={handleKey}
+                className="pl-12 pr-10 py-3 bg-white border border-slate-100 rounded-full text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-blue-50 transition-all"
+                aria-label="Search"
+            />
+            {term && (
+                <button
+                    onClick={() => { setTerm(""); setOpen(false); }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                    aria-label="Clear search"
+                    type="button"
+                >
+                    <i className="fa-solid fa-xmark text-sm"></i>
+                </button>
+            )}
+            {open && q && (
+                <div className="absolute left-0 right-0 mt-2 bg-white shadow-2xl rounded-2xl border border-slate-100 p-2 z-40 animate-in fade-in max-h-[28rem] overflow-auto">
+                    {totalHits === 0 ? (
+                        <div className="px-4 py-8 text-sm text-slate-400 text-center">
+                            <i className="fa-solid fa-magnifying-glass text-2xl text-slate-200 mb-3 block"></i>
+                            No results for "<span className="font-bold text-slate-600">{term}</span>"
+                        </div>
+                    ) : (
+                        <>
+                            {recordHits.length > 0 && (
+                                <div className="mb-1">
+                                    <p className="px-3 py-2 text-[10px] uppercase tracking-widest text-slate-400 font-bold">Diagnostic Records ({recordHits.length})</p>
+                                    {recordHits.map((r, i) => (
+                                        <button
+                                            key={r.id}
+                                            type="button"
+                                            onMouseEnter={() => setActiveIdx(i)}
+                                            onClick={() => pick(i)}
+                                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${activeIdx === i ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
+                                        >
+                                            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">{r.patient.charAt(0)}</div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-bold truncate">{r.patient}</p>
+                                                <p className="text-xs text-slate-400 truncate">{r.id} · {r.date} · {r.doctor}</p>
+                                            </div>
+                                            <StatusPill result={r.result} />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {patientHits.length > 0 && (
+                                <div>
+                                    <p className="px-3 py-2 text-[10px] uppercase tracking-widest text-slate-400 font-bold">Patients ({patientHits.length})</p>
+                                    {patientHits.map((p, i) => {
+                                        const idx = recordHits.length + i;
+                                        return (
+                                            <button
+                                                key={p.id}
+                                                type="button"
+                                                onMouseEnter={() => setActiveIdx(idx)}
+                                                onClick={() => pick(idx)}
+                                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${activeIdx === idx ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
+                                            >
+                                                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-xs text-slate-500 shrink-0"><i className="fa-solid fa-user"></i></div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold truncate">{p.name}</p>
+                                                    <p className="text-xs text-slate-400 truncate">{p.id} · {p.gender}, age {p.age}</p>
+                                                </div>
+                                                <i className="fa-solid fa-arrow-right text-slate-300 text-xs"></i>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </>
+                    )}
+                    <div className="mt-2 pt-2 border-t border-slate-100 px-3 py-1 flex items-center justify-between text-[10px] text-slate-400">
+                        <span><kbd className="font-mono">↑↓</kbd> navigate · <kbd className="font-mono">↵</kbd> open · <kbd className="font-mono">esc</kbd> close</span>
+                        {totalHits > 0 && <span className="font-bold">{totalHits} result{totalHits !== 1 ? 's' : ''}</span>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+const Dashboard = ({ onExport, onNewDiagnostic, analysesToday, alerts, statsChartDemo, recordsDemo, onRecordClick }) => {
+    const stats = [
+        { label: 'Total Scans Today', value: analysesToday, change: '+12%', icon: 'fa-camera', color: 'text-blue-500' },
+        { label: 'Anomalies Detected', value: alerts, change: '-20%', icon: 'fa-triangle-exclamation', color: 'text-amber-500' },
+        { label: 'Pending Reviews', value: 7, change: '+3', icon: 'fa-clipboard-list', color: 'text-violet-500' },
+        { label: 'AI Accuracy Avg', value: '98.2%', change: '+0.4%', icon: 'fa-check-double', color: 'text-emerald-500' }
+    ];
+    return (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="flex flex-col lg:flex-row justify-between gap-6 mb-10">
+                <div>
+                    <span className="soft-chip inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] uppercase tracking-[0.24em] font-bold text-slate-500 mb-4">
+                        <i className="fa-solid fa-wave-square"></i> Live Clinical Console
+                    </span>
+                    <h1 className="text-4xl font-bold text-[#1a1a1e] tracking-tight">Detect Early. Protect Vision. Empower Healthcare.</h1>
+                    <p className="text-slate-500 mt-2 max-w-2xl">AI-driven retinal screening technology powered by Calisto Sdn. Bhd..</p>
+                </div>
+                <div className="flex gap-3 items-start">
+                    <button className="px-4 py-2 border border-slate-200 bg-white/70 rounded-lg text-sm font-medium hover:bg-white transition-colors" onClick={onExport}>
+                        Export Report
+                    </button>
+                    <button className="px-4 py-2 premium-gradient text-white rounded-lg text-sm font-medium shadow-lg shadow-slate-200 hover:opacity-90 transition" onClick={onNewDiagnostic}>
+                        Start New Screening
+                    </button>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
+                {stats.map((stat, i) => (
+                    <div key={i} className="calisto-card rounded-2xl p-6 cursor-pointer" onClick={statsChartDemo}>
+                        <div className="flex justify-between items-start mb-5">
+                            <div className={`w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center ${stat.color}`}>
+                                <i className={`fa-solid ${stat.icon} text-lg`}></i>
+                            </div>
+                            <span className={`text-xs font-bold px-2 py-1 rounded-full bg-slate-50 ${stat.change.startsWith('-') ? 'text-red-600' : 'text-emerald-600'}`}>{stat.change}</span>
+                        </div>
+                        <p className="text-slate-500 text-[11px] uppercase tracking-widest font-bold">{stat.label}</p>
+                        <h3 className="text-3xl font-bold mt-2 text-[#1a1a1e]">{stat.value}</h3>
+                    </div>
+                ))}
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div className="xl:col-span-2 calisto-card rounded-2xl p-8">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-bold">Screening Volume</h3>
+                        <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">7-day flow</span>
+                    </div>
+                    <VolumeBarDemo data={MOCK_SCREENING_VOLUME} />
+                    <div className="flex justify-between mt-4 text-xs font-bold text-slate-400 uppercase tracking-widest">
+                        {MOCK_SCREENING_VOLUME.map(item => <span key={item.day}>{item.day}</span>)}
+                    </div>
+                </div>
+                <div className="calisto-card rounded-2xl p-8">
+                    <h3 className="text-lg font-bold mb-6">Quick Actions</h3>
+                    <div className="space-y-4">
+                        <button onClick={onNewDiagnostic} className="w-full p-4 premium-gradient text-white rounded-2xl font-bold transition flex items-center gap-3">
+                            <i className="fa-solid fa-microscope"></i> Start New Screening
+                        </button>
+                        <button onClick={onExport} className="w-full p-4 bg-white/70 hover:bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold transition flex items-center gap-3">
+                            <i className="fa-solid fa-file-export"></i> Export Clinical Summary
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div className="calisto-card rounded-2xl p-8 mt-8">
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-bold">Recent Diagnostic Activity</h3>
+                    <span className="text-xs text-slate-400 font-bold">{recordsDemo.length} visible records</span>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {recordsDemo.slice(0, 6).map(record => (
+                        <button key={record.id} type="button" className="text-left flex items-center justify-between p-4 rounded-xl hover:bg-slate-50 transition-colors border border-slate-100 bg-white/55" onClick={() => onRecordClick(record)}>
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                                    <i className="fa-solid fa-user text-sm"></i>
+                                </div>
+                                <div>
+                                    <p className="font-bold text-sm">{record.patient}</p>
+                                    <p className="text-xs text-slate-400">{record.date} - {record.id}</p>
+                                </div>
+                            </div>
+                            <StatusPill result={record.result} />
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+function VolumeBarDemo({ data }) {
+    // For fun/interactive: allow animation-on-click
+    const [volume, setVolume] = useState(data);
+    const maxScans = Math.max(...volume.map(item => item.scans));
+    function animate() {
+        setVolume(vals=>vals.map(item => ({
+            ...item,
+            scans: Math.floor(Math.random() * 38) + 22
+        })));
+    }
+    return (
+        <div className="h-64 flex items-end gap-3 cursor-pointer group relative pt-8" title="Randomize bars" tabIndex={0} onClick={animate}>
+            {volume.map(item => {
+                const height = Math.max(24, Math.round((item.scans / maxScans) * 100));
+                return (
+                <div key={item.day} className="flex-1 h-full bg-slate-100 rounded-t-xl relative overflow-visible">
+                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-500">{item.scans}</span>
+                    <div 
+                        style={{ height: `${height}%`, backgroundColor: item.color, transition: "height 0.6s cubic-bezier(.65,-0.03,.51,1.09)"}}
+                        className="absolute bottom-0 w-full rounded-t-xl shadow-lg opacity-90 hover:opacity-100"
+                    ></div>
+                </div>
+            )})}
+            <span className="absolute left-1/2 -bottom-7 text-blue-600 opacity-0 group-hover:opacity-100 text-xs font-bold transition pointer-events-none ml-3">
+                Click bars!
+            </span>
+        </div>
+    );
+}
+
+const Diagnostics = ({ onResultSubmit, showToast }) => {
+    const [stage, setStage] = useState('connect');
+    const [activeOption, setActiveOption] = useState(null);
+    const [file, setFile] = useState(null);
+    const [imgSrc, setImgSrc] = useState(null);
+    const [progress, setProgress] = useState(0);
+    const [result, setResult] = useState(null);
+    const [cameraStream, setCameraStream] = useState(null);
+    const [webcamError, setWebcamError] = useState('');
+    const [device, setDevice] = useState('');
+    const fileInputRef = useRef();
+    const videoRef = useRef();
+
+    useEffect(() => {
+        return () => cameraStream?.getTracks().forEach(track => track.stop());
+    }, [cameraStream]);
+
+    useEffect(() => {
+        if (videoRef.current && cameraStream && activeOption === 'webcam') {
+            videoRef.current.srcObject = cameraStream;
+        }
+    }, [cameraStream, activeOption]);
+
+    async function openCamera() {
+        setActiveOption('webcam');
+        setWebcamError('');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setCameraStream(stream);
+        } catch (err) {
+            setWebcamError('Could not access camera.');
+            showToast && showToast('Camera access denied.');
+        }
+    }
+
+    function startScan(source, label) {
+        setImgSrc(source || imgSrc);
+        setFile(file || { name: label || 'Captured image' });
+        setStage('scanning');
+        setProgress(0);
+        let value = 0;
+        const timer = setInterval(() => {
+            value += 4;
+            setProgress(Math.min(value, 100));
+            if (value >= 100) {
+                clearInterval(timer);
+                const pick = [
+                    { status: 'Alert', score: '94.8', diagnosis: 'Detection Result: Diabetic Retinopathy', notes: 'Multiple microaneurysms and intraretinal hemorrhages detected. Expert validation recommended.' },
+                    { status: 'Warning', score: '89.3', diagnosis: 'Early Glaucoma indicators detected', notes: 'Cup-to-disc ratio and vessel morphology should be reviewed by an ophthalmologist.' },
+                    { status: 'Optimal', score: '98.7', diagnosis: 'No urgent retinal abnormality detected', notes: 'Fundus pattern is within baseline range for this simulated screening.' }
+                ][Math.floor(Math.random() * 3)];
+                setTimeout(() => {
+                    setResult({ ...pick, fileName: label || file?.name || 'screening-image.png' });
+                    setStage('results');
+                    onResultSubmit && onResultSubmit(pick);
+                }, 350);
+            }
+        }, 80);
+    }
+
+    function captureWebcam(e) {
+        e.stopPropagation();
+        if (!videoRef.current) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = videoRef.current.videoWidth || 640;
+        canvas.height = videoRef.current.videoHeight || 480;
+        canvas.getContext('2d').drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const capture = canvas.toDataURL('image/png');
+        cameraStream?.getTracks().forEach(track => track.stop());
+        setCameraStream(null);
+        showToast && showToast('Image captured from webcam.');
+        startScan(capture, 'webcam-capture.png');
+    }
+
+    function handleFile(e) {
+        const selected = e.target.files[0];
+        if (!selected) return;
+        setFile(selected);
+        const reader = new FileReader();
+        reader.onload = evt => {
+            setImgSrc(evt.target.result);
+            showToast && showToast('Image file loaded.');
+            startScan(evt.target.result, selected.name);
+        };
+        reader.readAsDataURL(selected);
+    }
+
+    function reset() {
+        setStage('connect');
+        setActiveOption(null);
+        setFile(null);
+        setImgSrc(null);
+        setResult(null);
+        setProgress(0);
+        setDevice('');
+    }
+
+    return (
+        <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="text-center mb-12">
+                <h1 className="text-3xl font-bold text-[#1a1a1e] tracking-tight">AI Screening Input</h1>
+                <p className="text-slate-500 mt-2">Choose webcam, connected camera, or upload just like the full OcuVision workflow.</p>
+            </div>
+            {stage === 'connect' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <InputOption active={activeOption === 'webcam'} color="blue" icon="fa-camera" title="Open Camera" text="Use the PC webcam to capture a live screening photo." onClick={openCamera}>
+                        {activeOption === 'webcam' && (
+                            <div className="w-full flex flex-col items-center gap-3">
+                                {webcamError && <p className="text-xs text-red-500">{webcamError}</p>}
+                                <div className="aspect-video w-full rounded-xl overflow-hidden bg-slate-900">
+                                    <video autoPlay muted playsInline ref={videoRef} className="w-full h-full object-cover" />
+                                </div>
+                                <button className="px-5 py-2 premium-gradient text-white rounded-lg text-sm font-bold" onClick={captureWebcam}>Capture Image</button>
+                            </div>
+                        )}
+                    </InputOption>
+                    <InputOption active={activeOption === 'device'} color="emerald" icon="fa-plug-circle-bolt" title="Connect Local Camera" text="Pair a fundus or external imaging device for capture." onClick={() => setActiveOption('device')}>
+                        {activeOption === 'device' && (
+                            <div className="w-full space-y-3">
+                                <select className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm" value={device} onChange={e=>setDevice(e.target.value)}>
+                                    <option value="">Select device...</option>
+                                    <option>USB Camera</option>
+                                    <option>Fundus Camera</option>
+                                    <option>External Camera</option>
+                                </select>
+                                <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); startScan('https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=800&auto=format&fit=crop', `${device || 'device'}-capture.jpg`); }}>
+                                    <i className="fa-solid fa-bolt mr-2"></i>Capture Image
+                                </button>
+                            </div>
+                        )}
+                    </InputOption>
+                    <InputOption active={activeOption === 'upload'} color="amber" icon="fa-upload" title="Browse Local Files" text="Upload high-resolution fundus photos in JPG, PNG, or TIFF." onClick={() => setActiveOption('upload')}>
+                        {activeOption === 'upload' && (
+                            <div className="w-full">
+                                <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFile} />
+                                <button className="w-full px-5 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold" onClick={e => { e.stopPropagation(); fileInputRef.current.click(); }}>
+                                    Select Image
+                                </button>
+                            </div>
+                        )}
+                    </InputOption>
+                </div>
+            )}
+            {stage === 'scanning' && (
+                <div className="calisto-card rounded-3xl p-12 text-center">
+                    <div className="relative w-44 h-44 mx-auto mb-8">
+                        <div className="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                        <div className="absolute inset-0 rounded-full border-4 border-t-[#1a1a1e] border-slate-200 animate-spin"></div>
+                        <div className="absolute inset-0 flex items-center justify-center text-3xl font-bold">{progress}%</div>
+                    </div>
+                    <h2 className="text-2xl font-bold">AI Diagnostic Pipeline</h2>
+                    <p className="text-slate-500 mt-2 animate-pulse">Pre-processing, CLAHE enhancement, and feature extraction in progress.</p>
+                </div>
+            )}
+            {stage === 'results' && result && (
+                <div className="space-y-8">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-2xl font-bold">Screening Report</h2>
+                            <p className="text-slate-500 text-sm">ID: SCR-2026-LT99 - Date: {new Date().toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={reset} className="px-5 py-2 bg-white border border-slate-200 rounded-lg font-bold text-sm">New Scan</button>
+                            <button onClick={() => showToast && showToast('Screening recorded.')} className="px-5 py-2 premium-gradient text-white rounded-lg font-bold text-sm">Finalize & Record</button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <ResultPreview title="Original Fundus" src={imgSrc} />
+                        <ResultPreview title="CLAHE Enhanced" src={imgSrc} filter="grayscale contrast-125" />
+                        <ResultPreview title="Vessel Segmentation" src={imgSrc} filter="invert contrast-150" />
+                        <div className="calisto-card rounded-2xl p-5">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Intensity Profile</p>
+                            {[68,85,34,72,91].map((val, i) => <IntensityBar key={i} label={['Mean','Deviation','Skewness','Smoothness','Entropy'][i]} val={val} />)}
+                        </div>
+                    </div>
+                    <div className="calisto-card rounded-3xl p-8">
+                        <div className="flex flex-col lg:flex-row gap-8">
+                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-2xl ${result.status === 'Alert' ? 'bg-rose-50 text-rose-600' : result.status === 'Warning' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                <i className={`fa-solid ${result.status === 'Optimal' ? 'fa-circle-check' : 'fa-triangle-exclamation'}`}></i>
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-3 mb-3">
+                                    <h3 className="text-2xl font-bold">{result.diagnosis}</h3>
+                                    <StatusPill result={result.status} />
+                                </div>
+                                <p className="text-slate-600 leading-relaxed">{result.notes}</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+                                    <MetricCard label="Confidence Score" value={`${result.score}%`} />
+                                    <MetricCard label="Severity Level" value={result.status} />
+                                    <MetricCard label="Expert Validation" value={result.status === 'Optimal' ? 'Optional' : 'Required'} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+function InputOption({ active, color, icon, title, text, onClick, children }) {
+    const colors = {
+        blue: 'text-blue-500 border-blue-200',
+        emerald: 'text-emerald-500 border-emerald-200',
+        amber: 'text-amber-500 border-amber-200'
+    };
+    return (
+        <div onClick={onClick} className={`calisto-card rounded-3xl p-8 border-2 border-dashed cursor-pointer text-center flex flex-col items-center gap-5 ${active ? colors[color] : 'border-slate-200'}`}>
+            <div className="w-20 h-20 rounded-3xl bg-slate-50 flex items-center justify-center">
+                <i className={`fa-solid ${icon} text-3xl ${colors[color]?.split(' ')[0]}`}></i>
+            </div>
+            <div>
+                <h3 className="text-xl font-bold">{title}</h3>
+                <p className="text-slate-500 text-sm mt-2">{text}</p>
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function StatusPill({ result }) {
+    const text = result || 'Healthy';
+    const lower = text.toLowerCase();
+    const cls = lower.includes('healthy') || lower.includes('optimal')
+        ? 'bg-emerald-50 text-emerald-600'
+        : lower.includes('alert') || lower.includes('retinopathy') || lower.includes('glaucoma')
+        ? 'bg-rose-50 text-rose-600'
+        : 'bg-amber-50 text-amber-600';
+    return <span className={`text-[10px] uppercase tracking-widest font-bold px-3 py-1 rounded-full ${cls}`}>{text}</span>;
+}
+
+function ResultPreview({ title, src, filter = '' }) {
+    return (
+        <div className="calisto-card rounded-2xl p-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{title}</p>
+            <div className="aspect-square rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100">
+                {src ? <img src={src} className={`w-full h-full object-cover ${filter}`} /> : <i className="fa-solid fa-image text-4xl text-slate-300"></i>}
+            </div>
+        </div>
+    );
+}
+
+function IntensityBar({ label, val }) {
+    return (
+        <div className="space-y-1.5 mb-3">
+            <div className="flex justify-between text-[10px] font-bold uppercase text-slate-400">
+                <span>{label}</span><span>{val}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-slate-900 rounded-full" style={{ width: `${val}%` }}></div>
+            </div>
+        </div>
+    );
+}
+
+function MetricCard({ label, value }) {
+    return (
+        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+            <p className="text-xl font-bold text-[#1a1a1e]">{value}</p>
+        </div>
+    );
+}
+
+// Patient Registry View - Interactive
+function PatientRegistry({ onRecordClick }) {
+    const [search, setSearch] = useState('');
+    const [filter, setFilter] = useState('All');
+    const [sort, setSort] = useState('date');
+    const [page, setPage] = useState(1);
+    const pageSize = 5;
+    const severityRank = { Critical: 3, Moderate: 2, Healthy: 1 };
+    const diseases = ['All', 'Healthy', 'Diabetic Retinopathy', 'Glaucoma', 'AMD', 'Cataract'];
+    let records = MOCK_RECORDS.filter(record => {
+        const term = search.toLowerCase();
+        const matchesSearch = !term || [record.patient, record.id, record.result, record.severity].some(value => value.toLowerCase().includes(term));
+        const matchesFilter = filter === 'All' || record.result === filter || record.severity === filter;
+        return matchesSearch && matchesFilter;
+    });
+    records = [...records].sort((a,b) => {
+        if (sort === 'severity') return severityRank[b.severity] - severityRank[a.severity];
+        if (sort === 'name') return a.patient.localeCompare(b.patient);
+        return b.date.localeCompare(a.date);
+    });
+    const totalPages = Math.max(1, Math.ceil(records.length / pageSize));
+    const shown = records.slice((page - 1) * pageSize, page * pageSize);
+
+    return (
+        <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-8">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Patient Registry</h1>
+                    <p className="text-slate-500 mt-1">Search, filter, sort, and open diagnostic records.</p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                    <div className="relative">
+                        <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search name, ID, disease..." className="pl-11 pr-4 py-3 bg-white/80 border border-slate-100 rounded-xl text-sm w-72 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </div>
+                    <select value={filter} onChange={e => { setFilter(e.target.value); setPage(1); }} className="px-4 py-3 bg-white/80 border border-slate-100 rounded-xl text-sm">
+                        {diseases.map(item => <option key={item}>{item}</option>)}
+                    </select>
+                    <select value={sort} onChange={e => setSort(e.target.value)} className="px-4 py-3 bg-white/80 border border-slate-100 rounded-xl text-sm">
+                        <option value="date">Sort by Date</option>
+                        <option value="name">Sort by Name</option>
+                        <option value="severity">Sort by Severity</option>
+                    </select>
+                </div>
+            </div>
+            <div className="calisto-card rounded-3xl overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-white/70 text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] border-b border-slate-100">
+                        <tr>
+                            <th className="px-8 py-5">Patient Details</th>
+                            <th className="px-8 py-5">Record ID</th>
+                            <th className="px-8 py-5">Date</th>
+                            <th className="px-8 py-5">AI Result</th>
+                            <th className="px-8 py-5 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {shown.map(record => (
+                            <tr key={record.id} className="hover:bg-white/60 transition-colors">
+                                <td className="px-8 py-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-500">{record.patient.charAt(0)}</div>
+                                        <div>
+                                            <p className="font-bold">{record.patient}</p>
+                                            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Age: {record.age}</p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-8 py-6 text-slate-500 font-mono text-sm">{record.id}</td>
+                                <td className="px-8 py-6 text-slate-500 text-sm">{record.date}</td>
+                                <td className="px-8 py-6"><StatusPill result={record.result} /></td>
+                                <td className="px-8 py-6 text-right">
+                                    <button onClick={() => onRecordClick(record)} className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold">
+                                        <i className="fa-solid fa-eye mr-2"></i>View
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {shown.length === 0 && <tr><td colSpan="5" className="text-center py-12 text-slate-400">No records found.</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+            <div className="flex items-center justify-between mt-5 text-sm text-slate-500">
+                <span>Showing {shown.length} of {records.length} records</span>
+                <div className="flex items-center gap-2">
+                    <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-2 bg-white/80 border border-slate-100 rounded-lg disabled:opacity-40">Prev</button>
+                    <span className="font-bold">{page}/{totalPages}</span>
+                    <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="px-3 py-2 bg-white/80 border border-slate-100 rounded-lg disabled:opacity-40">Next</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+// Analytics dummy (click for toast)
+function Analytics({ showToast }) {
+    const [range, setRange] = useState('7d');
+    const data = range === '30d'
+        ? { cases: [48,19,14,11,8], trend: [54,74,62,78], labels: ['Wk 1','Wk 2','Wk 3','Wk 4'] }
+        : { cases: [55,16,12,8,9], trend: [12,15,18,25,30,17,16], labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] };
+    const trendColors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#ef4444'];
+    const caseColors  = ['#10b981','#ef4444','#8b5cf6','#f59e0b','#06b6d4'];
+    return (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-8">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Analytics Dashboard</h1>
+                    <p className="text-slate-500 mt-1">Case distribution, screening volume, and AI efficiency metrics.</p>
+                </div>
+                <div className="flex gap-2">
+                    {['7d','30d','custom'].map(item => (
+                        <button key={item} onClick={() => { setRange(item); showToast && showToast(`Analytics range: ${item}`); }} className={`px-4 py-2 rounded-full text-xs font-bold uppercase border ${range === item ? 'premium-gradient text-white border-slate-800' : 'bg-white/80 text-slate-500 border-slate-100'}`}>
+                            {item === '7d' ? 'Last 7 days' : item === '30d' ? 'Last 30 days' : 'Custom'}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div className="calisto-card rounded-3xl p-8">
+                    <h3 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-6">Case Distribution</h3>
+                    <div className="space-y-4">
+                        {['Normal','DR','Glaucoma','AMD','Cataract'].map((label, i) => {
+                            const color = caseColors[i % caseColors.length];
+                            return (
+                                <div key={label}>
+                                    <div className="flex justify-between text-xs font-bold text-slate-500 mb-1.5">
+                                        <span className="flex items-center gap-2">
+                                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }}></span>
+                                            {label}
+                                        </span>
+                                        <span>{data.cases[i]}%</span>
+                                    </div>
+                                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${data.cases[i]}%`, backgroundColor: color }}></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="xl:col-span-2 calisto-card rounded-3xl p-8">
+                    <h3 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-6">AI Efficiency Metrics</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                        <MetricCard label="Sensitivity" value="96.2%" />
+                        <MetricCard label="Specificity" value="94.8%" />
+                        <MetricCard label="Precision" value="92.1%" />
+                        <MetricCard label="Avg Latency" value="1.2s" />
+                    </div>
+                    <div className="h-56 flex items-end gap-3">
+                        {data.trend.map((value, i) => {
+                            const color = trendColors[i % trendColors.length];
+                            return (
+                                <div key={i} className="flex-1 flex flex-col items-center gap-3">
+                                    <div className="w-full bg-slate-100 rounded-t-xl relative overflow-hidden" style={{ height: '180px' }}>
+                                        <div
+                                            className="absolute bottom-0 w-full rounded-t-xl shadow-lg opacity-90 hover:opacity-100"
+                                            style={{ height: `${Math.max(18, value * 2)}px`, backgroundColor: color, transition: 'height 0.6s cubic-bezier(.65,-0.03,.51,1.09)' }}
+                                        ></div>
+                                    </div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase">{data.labels[i]}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                <div className="calisto-card rounded-2xl p-6"><MetricCard label="Disease Trend" value="+8.4%" /></div>
+                <div className="calisto-card rounded-2xl p-6"><MetricCard label="Age Group Peak" value="40-59" /></div>
+                <div className="calisto-card rounded-2xl p-6"><MetricCard label="Review Queue" value="7 cases" /></div>
+            </div>
+        </div>
+    );
+}
+function Settings({ showToast }) {
+    const [tab, setTab] = useState('account');
+    const [twoFactor, setTwoFactor] = useState(false);
+    const tabs = [
+        { id: 'account', label: 'Staff Account', icon: 'fa-user' },
+        { id: 'device', label: 'Device Link', icon: 'fa-desktop' },
+        { id: 'security', label: 'Data Privacy', icon: 'fa-shield-halved' },
+        { id: 'system', label: 'AI Core', icon: 'fa-bolt' }
+    ];
+    return (
+        <div className="max-w-5xl mx-auto calisto-card rounded-3xl overflow-hidden flex min-h-[620px] animate-in fade-in">
+            <aside className="w-72 bg-white/55 border-r border-slate-100 p-6 space-y-2">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-4">Configuration</p>
+                {tabs.map(item => (
+                    <button key={item.id} onClick={() => setTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition ${tab === item.id ? 'premium-gradient text-white font-bold' : 'text-slate-500 hover:bg-white'}`}>
+                        <i className={`fa-solid ${item.icon} w-5`}></i>{item.label}
+                    </button>
+                ))}
+            </aside>
+            <section className="flex-1 p-10">
+                {tab === 'account' && (
+                    <div className="space-y-7">
+                        <h2 className="text-2xl font-bold">Account Information</h2>
+                        <div className="flex items-center gap-5 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                            <img src="IMG_5272.jpg" className="w-20 h-20 rounded-2xl bg-white" />
+                            <div>
+                                <button onClick={() => showToast && showToast('Avatar updated.')} className="px-4 py-2 premium-gradient text-white rounded-xl text-xs font-bold">Update Avatar</button>
+                                <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest">JPG or PNG - max 2MB</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-5">
+                            <SettingInput label="Display Name" value="Mohammad Fahmi Imran" />
+                            <SettingInput label="Staff ID" value="STF-2026-0067" disabled />
+                            <SettingInput label="Work Email" value="fahmi.imran@calisto.com" />
+                            <SettingInput label="Assigned Role" value="Intern / Developer" disabled />
+                        </div>
+                        <button onClick={() => showToast && showToast('Account preferences saved.')} className="px-8 py-3 premium-gradient text-white rounded-2xl font-bold text-sm">Save Preferences</button>
+                    </div>
+                )}
+                {tab === 'device' && (
+                    <div className="space-y-7">
+                        <h2 className="text-2xl font-bold">Connected Hardware</h2>
+                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><i className="fa-solid fa-desktop"></i></div>
+                                <div><p className="font-bold">Calisto-FC-Optima</p><p className="text-xs text-emerald-600 font-bold uppercase tracking-widest">Active connection - USB 3.1</p></div>
+                            </div>
+                            <button onClick={() => showToast && showToast('Device disconnected.')} className="px-4 py-2 bg-white rounded-xl text-xs font-bold text-slate-500">Disconnect</button>
+                        </div>
+                        <SettingToggle label="Auto-detect optic disc focus" active />
+                        <SettingToggle label="Adaptive brightness correction" active />
+                        <SettingToggle label="Export as DICOM by default" />
+                    </div>
+                )}
+                {tab === 'security' && (
+                    <div className="space-y-7">
+                        <h2 className="text-2xl font-bold">Security & Privacy</h2>
+                        <div className="grid md:grid-cols-2 gap-5">
+                            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
+                                <p className="font-bold">Change Password</p>
+                                <input type="password" placeholder="New password" className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl" />
+                                <button onClick={() => showToast && showToast('Password changed.')} className="w-full py-3 premium-gradient text-white rounded-xl font-bold text-sm">Change Password</button>
+                            </div>
+                            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                                <SettingToggle label="Enable Two-Factor Authentication" active={twoFactor} onClick={() => setTwoFactor(v => !v)} />
+                                <p className="text-xs text-slate-500 mt-4">Adds an extra layer of protection at login.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {tab === 'system' && (
+                    <div className="space-y-7">
+                        <h2 className="text-2xl font-bold">AI Core Configuration</h2>
+                        <SettingSelect
+                            label="Model"
+                            options={[
+                                { value: 'calisto-ai-1.0', label: 'CalistoAI v1.0' },
+                                { value: 'nova-retina-2.4', label: 'NovaRetina v2.4' },
+                                { value: 'optivision-1.7', label: 'OptiVision v1.7' }
+                            ]}
+                            defaultValue="calisto-ai-1.0"
+                            onChange={value => showToast && showToast(`Model switched to ${value}.`)}
+                        />
+                        <div>
+                            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Confidence Threshold</label>
+                            <input type="range" min="50" max="99" defaultValue="85" className="w-full accent-slate-900 mt-3" />
+                        </div>
+                        <SettingToggle label="Enable Auto-Save Results" active />
+                    </div>
+                )}
+            </section>
+        </div>
+    );
+}
+
+function SettingInput({ label, value, disabled = false }) {
+    return (
+        <div>
+            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">{label}</label>
+            <input defaultValue={value} disabled={disabled} className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm disabled:opacity-60" />
+        </div>
+    );
+}
+
+function SettingSelect({ label, options, defaultValue, onChange }) {
+    const [value, setValue] = useState(defaultValue ?? options?.[0]?.value);
+    function handleChange(e) {
+        const next = e.target.value;
+        setValue(next);
+        const picked = options.find(opt => opt.value === next);
+        onChange && onChange(picked?.label || next);
+    }
+    return (
+        <div>
+            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">{label}</label>
+            <div className="relative mt-2">
+                <select
+                    value={value}
+                    onChange={handleChange}
+                    className="w-full appearance-none px-4 py-3 pr-10 bg-slate-50 border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 cursor-pointer"
+                >
+                    {options.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                </select>
+                <i className="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+            </div>
+        </div>
+    );
+}
+
+function SettingToggle({ label, active = false, onClick }) {
+    const [localActive, setLocalActive] = useState(active);
+    const current = onClick ? active : localActive;
+    function toggle() {
+        if (onClick) onClick();
+        else setLocalActive(v => !v);
+    }
+    return (
+        <button type="button" onClick={toggle} className="w-full flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 text-left">
+            <span className="text-sm font-medium text-slate-700">{label}</span>
+            <span className={`w-11 h-6 rounded-full relative transition ${current ? 'bg-slate-900' : 'bg-slate-300'}`}>
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition ${current ? 'right-1' : 'left-1'}`}></span>
+            </span>
+        </button>
+    );
+}
+// Login/Register Screen (interactive)
+function AuthPage({ onAuth }) {
+    const [register, setRegister] = useState(false);
+    const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "doctor" });
+    const [error, setError] = useState("");
+    function handleChange(e) {
+        setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+    }
+    function handleSubmit(e) {
+        e.preventDefault();
+        setError("");
+        if (register) {
+            if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.confirm.trim())
+                return setError("Please fill in all fields.");
+            if (form.password !== form.confirm)
+                return setError("Passwords don't match.");
+            if (form.password.length < 4)
+                return setError("Password too short.");
+            // mock: username must be unique
+            if (MOCK_USERS.find(u=>u.username===form.username))
+                return setError("Username taken.");
+            // Register user (simulated)
+            MOCK_USERS.push({
+                username: form.username,
+                password: form.password,
+                type: form.type,
+                name: form.name
+            });
+            onAuth({ username: form.username, type: form.type, name: form.name });
+        } else {
+            const found = MOCK_USERS.find(
+                u=>u.username===form.username && u.password===form.password
+            );
+            if (!found) return setError("Invalid username or password.");
+            onAuth({ username: found.username, type: found.type, name: found.name });
+        }
+    }
+    return (
+        <div className="auth-shell min-h-screen flex items-center justify-center p-4">
+            <form className="bg-white p-10 rounded-3xl calisto-card shadow-xl w-full max-w-md space-y-8" onSubmit={handleSubmit}>
+                <div className="flex flex-col items-center gap-2 mb-6">
+                    <div className="w-14 h-14 premium-gradient rounded-xl flex items-center justify-center text-white mb-2 text-xl shadow">
+                        <i className="fa-solid fa-eye"></i>
+                    </div>
+                    <span className="text-2xl font-bold tracking-tight text-[#1a1a1e]">OCUVISION</span>
+                    <small className="text-slate-400 mt-0.5">{register ? "Register new account" : "Login to platform"}</small>
+                </div>
+                <div className="space-y-5">
+                    {register && (
+                        <input type="text" name="name" value={form.name} onChange={handleChange} placeholder="Full Name"
+                            className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                        />
+                    )}
+                    <input type="text" autoComplete="username"
+                        name="username" value={form.username} onChange={handleChange} placeholder="Username"
+                        className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                    />
+                    <input type="password" name="password" autoComplete="current-password" value={form.password} onChange={handleChange} placeholder="Password"
+                        className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                    />
+                    {register && (
+                        <>
+                        <input type="password" name="confirm" value={form.confirm} onChange={handleChange} placeholder="Confirm Password"
+                            className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                        />
+                        <select name="type" value={form.type} onChange={handleChange}
+                                className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none">
+                            <option value="doctor">Doctor</option>
+                            <option value="nurse">Nurse</option>
+                            <option value="assistant">Assistant</option>
+                        </select>
+                        </>
+                    )}
+                </div>
+                {error && <div className="text-red-500 text-sm -mb-4">{error}</div>}
+                <button type="submit" className="w-full py-3 mt-1 rounded-xl premium-gradient text-white font-bold shadow-lg hover:opacity-90 transition">
+                    {register ? "Register" : "Sign In"}
+                </button>
+                <div className="text-xs text-center text-slate-400">
+                    {register ? "Already have an account?" : "New user?"}{" "}
+                    <button
+                        type="button"
+                        className="underline text-blue-500 hover:text-blue-700"
+                        onClick={() => { setRegister(r=>!r); setError(""); setForm({ username:"", password:"", confirm:"", name:"", type:"doctor" }); }}
+                    >
+                        {register ? "Login" : "Register"}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+// --- Deterministic PRNG + feature generator (mirrors combined.py outputs) ---
+function makeRng(seed) {
+    let s = (seed | 0) || 1;
+    return () => {
+        s = (Math.imul(s, 1664525) + 1013904223) | 0;
+        return (s >>> 0) / 4294967296;
+    };
+}
+function hashRecordId(id) {
+    let h = 2166136261 >>> 0;
+    const str = String(id || '');
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+function generateFeatures(record) {
+    const rng = makeRng(hashRecordId(record.id));
+    const j = (lo, hi) => lo + (hi - lo) * rng();
+    const cond = (record.result || '').toLowerCase();
+
+    // Healthy baseline (typical clinical fundus statistics)
+    const f = {
+        GLCM_Contrast:        j(28, 42),
+        GLCM_Correlation:     j(0.93, 0.97),
+        GLCM_Energy:          j(0.13, 0.18),
+        GLCM_Homogeneity:     j(0.50, 0.60),
+        Intensity_Mean:       j(108, 128),
+        Intensity_StdDev:     j(46, 58),
+        Intensity_Skewness:   j(0.05, 0.45),
+        Intensity_Kurtosis:   j(-1.10, -0.50),
+        Intensity_Entropy:    j(7.15, 7.45),
+        Intensity_Uniformity: j(0.0060, 0.0095),
+        Intensity_DynRange:   j(244, 255),
+        Vessel_GVD_pct:       j(10.4, 12.6),
+        Vessel_MaxLVD:        j(0.28, 0.34),
+        Vessel_Symmetry:      j(0.88, 0.97),
+        ONH_DiscArea_px2:     j(6200, 7400),
+        ONH_CupToDiscRatio:   j(0.22, 0.36),
+    };
+
+    if (cond.includes('early glaucoma')) {
+        f.ONH_CupToDiscRatio = j(0.46, 0.58);
+        f.ONH_DiscArea_px2   = j(7000, 7800);
+        f.Vessel_GVD_pct     = j(9.6, 11.0);
+        f.GLCM_Contrast      = j(36, 48);
+    } else if (cond.includes('glaucoma')) {
+        f.ONH_CupToDiscRatio = j(0.62, 0.78);
+        f.ONH_DiscArea_px2   = j(7400, 8400);
+        f.Vessel_GVD_pct     = j(8.8, 10.2);
+        f.GLCM_Contrast      = j(38, 52);
+        f.Intensity_StdDev   = j(50, 60);
+    } else if (cond.includes('diabetic') || cond.includes('retinopathy')) {
+        f.GLCM_Contrast      = j(58, 84);
+        f.GLCM_Correlation   = j(0.86, 0.91);
+        f.GLCM_Energy        = j(0.09, 0.13);
+        f.GLCM_Homogeneity   = j(0.42, 0.50);
+        f.Intensity_StdDev   = j(60, 72);
+        f.Intensity_Skewness = j(0.55, 1.10);
+        f.Intensity_Kurtosis = j(-0.40, 0.80);
+        f.Intensity_Entropy  = j(7.45, 7.75);
+        f.Vessel_GVD_pct     = j(8.6, 10.4);
+        f.Vessel_Symmetry    = j(0.62, 0.78);
+        f.Vessel_MaxLVD      = j(0.34, 0.42);
+    } else if (cond.includes('amd')) {
+        f.GLCM_Energy          = j(0.06, 0.10);
+        f.GLCM_Homogeneity     = j(0.40, 0.48);
+        f.Intensity_Entropy    = j(7.55, 7.82);
+        f.Intensity_Uniformity = j(0.0035, 0.0060);
+        f.Intensity_Skewness   = j(-0.30, 0.20);
+        f.Vessel_GVD_pct       = j(9.4, 11.2);
+        f.Vessel_Symmetry      = j(0.74, 0.86);
+    } else if (cond.includes('cataract')) {
+        f.GLCM_Contrast        = j(14, 22);
+        f.GLCM_Correlation     = j(0.96, 0.985);
+        f.GLCM_Energy          = j(0.20, 0.28);
+        f.GLCM_Homogeneity     = j(0.62, 0.74);
+        f.Intensity_Mean       = j(132, 156);
+        f.Intensity_StdDev     = j(28, 38);
+        f.Intensity_Entropy    = j(6.55, 6.95);
+        f.Intensity_Uniformity = j(0.0140, 0.0205);
+        f.Intensity_DynRange   = j(180, 220);
+        f.Vessel_GVD_pct       = j(7.4, 9.4);
+        f.Vessel_MaxLVD        = j(0.22, 0.28);
+        f.Vessel_Symmetry      = j(0.78, 0.90);
+    }
+
+    f.Intensity_Variance   = f.Intensity_StdDev * f.Intensity_StdDev;
+    f.Intensity_LogKurt    = Math.log(1e-5 + Math.abs(f.Intensity_Kurtosis));
+    f.Intensity_Smoothness = 1 - 1 / (1 + f.Intensity_Variance);
+    return f;
+}
+
+function buildInterpretation(record, f) {
+    const cond = (record.result || '').toLowerCase();
+    const validation = cond.includes('healthy') ? 'Optional' : 'Recommended';
+    const risk = cond.includes('healthy') ? 'Low'
+               : cond.includes('early')   ? 'Moderate'
+               : cond.includes('cataract') || cond.includes('amd') ? 'Moderate'
+               : 'High';
+    let summary, findings = [];
+
+    if (cond.includes('healthy')) {
+        summary = "Fundus pattern is within baseline range. Optic nerve head morphology, vessel architecture and intensity statistics are consistent with a healthy retina.";
+        findings = [
+            `Cup-to-disc ratio of ${f.ONH_CupToDiscRatio.toFixed(2)} is within normal range (<0.40).`,
+            `Vessel symmetry index of ${f.Vessel_Symmetry.toFixed(2)} indicates balanced retinal vascular distribution.`,
+            `GLCM contrast of ${f.GLCM_Contrast.toFixed(1)} reflects typical texture heterogeneity.`,
+            `Routine annual screening recommended.`,
+        ];
+    } else if (cond.includes('early glaucoma')) {
+        summary = "Borderline cup-to-disc ratio with mild morphological changes detected. Early glaucoma indicators are present and warrant ophthalmologist review.";
+        findings = [
+            `Cup-to-disc ratio of ${f.ONH_CupToDiscRatio.toFixed(2)} is in the borderline range (0.45 - 0.60).`,
+            `Disc area of ${f.ONH_DiscArea_px2.toFixed(0)} px² is mildly enlarged.`,
+            `Vessel architecture and intensity profile appear largely preserved.`,
+            `Follow-up imaging in 3 - 6 months recommended for trend monitoring.`,
+        ];
+    } else if (cond.includes('glaucoma')) {
+        summary = "Enlarged cup-to-disc ratio and ONH morphology suggest glaucomatous optic neuropathy. Confirm with visual field testing and OCT.";
+        findings = [
+            `Cup-to-disc ratio of ${f.ONH_CupToDiscRatio.toFixed(2)} exceeds the 0.60 glaucoma threshold.`,
+            `Disc area of ${f.ONH_DiscArea_px2.toFixed(0)} px² reflects an enlarged optic nerve head.`,
+            `Peripapillary vessel density of ${f.Vessel_GVD_pct.toFixed(2)}% indicates vascular attenuation.`,
+            `Urgent ophthalmologist referral recommended.`,
+        ];
+    } else if (cond.includes('diabetic') || cond.includes('retinopathy')) {
+        summary = "Texture and intensity statistics indicate microaneurysms and intraretinal hemorrhages consistent with diabetic retinopathy. Specialist evaluation required.";
+        findings = [
+            `Elevated GLCM contrast of ${f.GLCM_Contrast.toFixed(1)} suggests focal lesions disrupting retinal texture.`,
+            `Vessel symmetry of ${f.Vessel_Symmetry.toFixed(2)} reflects vascular asymmetry common in DR.`,
+            `Skewness of ${f.Intensity_Skewness.toFixed(2)} indicates intensity shift typical of hemorrhagic foci.`,
+            `Reduced GVD of ${f.Vessel_GVD_pct.toFixed(2)}% suggests vascular drop-out.`,
+            `Recommend HbA1c review and laser/anti-VEGF consultation.`,
+        ];
+    } else if (cond.includes('amd')) {
+        summary = "Sub-foveal drusen and intensity uniformity changes are consistent with age-related macular degeneration.";
+        findings = [
+            `Reduced GLCM energy of ${f.GLCM_Energy.toFixed(3)} indicates increased textural variance from drusen deposits.`,
+            `Elevated intensity entropy of ${f.Intensity_Entropy.toFixed(2)} suggests heterogeneous macular reflectance.`,
+            `Vessel symmetry of ${f.Vessel_Symmetry.toFixed(2)} remains within tolerance.`,
+            `Recommend macular OCT and AREDS supplementation review.`,
+        ];
+    } else if (cond.includes('cataract')) {
+        summary = "Reduced contrast and compressed dynamic range indicate light scattering from lens opacity. Anterior segment evaluation recommended for cataract grading.";
+        findings = [
+            `GLCM contrast of ${f.GLCM_Contrast.toFixed(1)} is markedly reduced due to image haze.`,
+            `Dynamic range of ${f.Intensity_DynRange.toFixed(0)} reflects compressed grey-level distribution.`,
+            `Increased uniformity of ${f.Intensity_Uniformity.toFixed(4)} consistent with diffuse opacity.`,
+            `Slit-lamp examination and surgical evaluation recommended.`,
+        ];
+    } else {
+        summary = "Diagnostic findings outside the standard categories. Manual review by an ophthalmologist is recommended.";
+        findings = [
+            `Reported confidence: ${record.confidence}.`,
+            `Severity classification: ${record.severity}.`,
+        ];
+    }
+    return { summary, findings, validation, risk };
+}
+
+// --- Stylized fundus SVG matching combined.py 2x2 plot grid ---
+function vesselPath(rng, ox, oy) {
+    const angle = rng() * Math.PI * 2;
+    const len = 30 + rng() * 28;
+    const ex = ox + Math.cos(angle) * len;
+    const ey = oy + Math.sin(angle) * len;
+    const mx = (ox + ex) / 2 + (rng() - 0.5) * 22;
+    const my = (oy + ey) / 2 + (rng() - 0.5) * 22;
+    const m2x = (mx + ex) / 2 + (rng() - 0.5) * 14;
+    const m2y = (my + ey) / 2 + (rng() - 0.5) * 14;
+    return `M${ox},${oy} Q${mx},${my} ${m2x},${m2y} T${ex},${ey}`;
+}
+function FundusSVG({ mode = 'original', cdr = 0.3, condition = '', seed = 1 }) {
+    const cond = (condition || '').toLowerCase();
+    const cupScale = Math.max(0.18, Math.min(0.94, cdr));
+    const discRx = 6.4, discRy = 7.2;
+    const cupRx = discRx * cupScale, cupRy = discRy * cupScale;
+    const ox = 65, oy = 50;
+    const gradientId = `retina-${seed}-${mode}`;
+
+    const vessels = useMemo(() => {
+        const rng = makeRng((seed ^ 0xa5a5a5) >>> 0);
+        return Array.from({ length: 9 }, () => ({
+            d: vesselPath(rng, ox, oy),
+            w: 0.55 + rng() * 0.7,
+        }));
+    }, [seed]);
+
+    const lesionCount = cond.includes('diabetic') || cond.includes('retinopathy') ? 18
+                      : cond.includes('amd') ? 9 : 0;
+    const lesions = useMemo(() => {
+        const rng = makeRng((seed ^ 0xdeadbe) >>> 0);
+        return Array.from({ length: lesionCount }, () => ({
+            cx: 22 + rng() * 56,
+            cy: 22 + rng() * 56,
+            r: 0.55 + rng() * 1.1,
+        }));
+    }, [seed, lesionCount]);
+
+    if (mode === 'vessel') {
+        return (
+            <svg viewBox="0 0 100 100" className="w-full h-full">
+                <rect width="100" height="100" fill="#000" />
+                {vessels.map((v, i) => (
+                    <path key={i} d={v.d} stroke="#fff" strokeWidth={v.w} fill="none" strokeLinecap="round" />
+                ))}
+            </svg>
+        );
+    }
+
+    const claheClass = mode === 'clahe' ? 'grayscale contrast-150 brightness-90' : '';
+    const cataractHaze = cond.includes('cataract');
+    const lesionFill = cond.includes('amd') ? '#f5da7e' : '#4a0606';
+
+    return (
+        <svg viewBox="0 0 100 100" className={`w-full h-full ${claheClass}`}>
+            <defs>
+                <radialGradient id={gradientId} cx="55%" cy="50%" r="62%">
+                    <stop offset="0%"   stopColor="#f7b067" />
+                    <stop offset="40%"  stopColor="#c8631c" />
+                    <stop offset="80%"  stopColor="#5a2008" />
+                    <stop offset="100%" stopColor="#1a0500" />
+                </radialGradient>
+            </defs>
+            <rect width="100" height="100" fill="#0a0500" />
+            <circle cx="50" cy="50" r="48" fill={`url(#${gradientId})`} />
+            {vessels.map((v, i) => (
+                <path key={i} d={v.d} stroke="#7a1a0c" strokeWidth={v.w * 0.95} fill="none" strokeLinecap="round" opacity="0.92" />
+            ))}
+            <circle cx="40" cy="50" r="3.2" fill="#3d1206" opacity="0.55" />
+            <ellipse cx={ox} cy={oy} rx={discRx} ry={discRy} fill="#fde9b6" />
+            <ellipse cx={ox} cy={oy} rx={cupRx} ry={cupRy} fill="#fff8da" />
+            {lesions.map((l, i) => (
+                <circle key={i} cx={l.cx} cy={l.cy} r={l.r} fill={lesionFill} opacity="0.92" />
+            ))}
+            {cataractHaze && (
+                <rect width="100" height="100" fill="rgba(255,245,220,0.42)" />
+            )}
+            {mode === 'onh' && (
+                <>
+                    <ellipse cx={ox} cy={oy} rx={discRx} ry={discRy} fill="none" stroke="#65d873" strokeWidth="0.8" />
+                    <ellipse cx={ox} cy={oy} rx={cupRx} ry={cupRy} fill="none" stroke="#ff5050" strokeWidth="0.65" />
+                </>
+            )}
+        </svg>
+    );
+}
+
+function ReportInfoCard({ label, children }) {
+    return (
+        <div className="p-6 rounded-3xl border border-slate-100 bg-white">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-3">{label}</p>
+            <div className="space-y-2">{children}</div>
+        </div>
+    );
+}
+function ReportRow({ label, value, mono }) {
+    return (
+        <div className="flex justify-between gap-4 text-sm">
+            <span className="text-slate-500">{label}</span>
+            <span className={`font-bold text-slate-800 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+        </div>
+    );
+}
+function FundusPanel({ title, subtitle, children }) {
+    return (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+            <div className="aspect-square rounded-xl overflow-hidden bg-black">{children}</div>
+            <p className="text-[10px] uppercase tracking-widest text-slate-200 font-bold mt-3">{title}</p>
+            {subtitle && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{subtitle}</p>}
+        </div>
+    );
+}
+function FeatureGroup({ title, rows, columns = 1 }) {
+    const gridClass = columns === 2 ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2' : 'space-y-2';
+    return (
+        <div className="p-5 rounded-3xl border border-slate-100 bg-white">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-4">{title}</p>
+            <div className={gridClass}>
+                {rows.map(([k, v]) => (
+                    <div key={k} className="flex justify-between items-baseline border-b border-slate-50 pb-1.5 gap-3">
+                        <span className="text-slate-500 font-mono text-[11px] truncate">{k}</span>
+                        <span className="font-bold text-slate-800 font-mono text-[11px]">{v}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// Diagnostic report modal (mirrors combined.py output)
+function RecordModal({ record, onClose }) {
+    if (!record) return null;
+    const seed = useMemo(() => hashRecordId(record.id), [record.id]);
+    const features = useMemo(() => generateFeatures(record), [record]);
+    const interp = useMemo(() => buildInterpretation(record, features), [record, features]);
+
+    useEffect(() => {
+        const onEsc = e => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', onEsc);
+        return () => document.removeEventListener('keydown', onEsc);
+    }, [onClose]);
+
+    const fmt = v => Number.isFinite(v) ? v.toFixed(6) : String(v);
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onClose}>
+            <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl" onMouseDown={e => e.stopPropagation()}>
+                <div className="sticky top-0 bg-white/95 backdrop-blur z-10 flex items-start justify-between px-8 py-5 border-b border-slate-100">
+                    <div>
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Diagnostic Report</p>
+                        <h2 className="text-2xl font-bold text-[#1a1a1e] mt-1">{record.patient}</h2>
+                        <p className="text-xs text-slate-500 mt-1">Record {record.id} &middot; Scan date {record.date} &middot; {record.doctor}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <StatusPill result={record.result} />
+                        <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-2" aria-label="Close">
+                            <i className="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-8 space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <ReportInfoCard label="Patient Information">
+                            <ReportRow label="Name" value={record.patient} />
+                            <ReportRow label="Age" value={`${record.age} yrs`} />
+                            <ReportRow label="Record ID" value={record.id} mono />
+                            <ReportRow label="Scan Date" value={record.date} />
+                            <ReportRow label="Attending" value={record.doctor} />
+                        </ReportInfoCard>
+                        <ReportInfoCard label="AI Verdict">
+                            <ReportRow label="Diagnosis" value={record.result} />
+                            <ReportRow label="Severity" value={record.severity} />
+                            <ReportRow label="Confidence" value={record.confidence} />
+                            <ReportRow label="Validation" value={interp.validation} />
+                            <ReportRow label="Risk Tier" value={interp.risk} />
+                        </ReportInfoCard>
+                    </div>
+
+                    <div className="p-6 rounded-3xl border border-slate-100 bg-slate-50">
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-2">Clinical Interpretation</p>
+                        <p className="text-sm text-slate-700 leading-relaxed">{interp.summary}</p>
+                        <ul className="mt-4 space-y-1.5">
+                            {interp.findings.map((finding, i) => (
+                                <li key={i} className="text-sm text-slate-600 flex gap-3">
+                                    <i className="fa-solid fa-circle-check text-emerald-500 mt-1 text-xs"></i>
+                                    <span>{finding}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div>
+                        <div className="flex items-baseline justify-between mb-3">
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Fundus Image Analysis</p>
+                            <p className="text-[10px] text-slate-400">U-Net pipeline &middot; 512 &times; 512</p>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <FundusPanel title="Resized Fundus" subtitle="RGB original">
+                                <FundusSVG mode="original" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                            </FundusPanel>
+                            <FundusPanel title="CLAHE Enhanced" subtitle="clip=0.005, tile=8x8">
+                                <FundusSVG mode="clahe" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                            </FundusPanel>
+                            <FundusPanel title="Vessel Segmentation" subtitle={`GVD: ${features.Vessel_GVD_pct.toFixed(2)}%`}>
+                                <FundusSVG mode="vessel" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                            </FundusPanel>
+                            <FundusPanel title="ONH Segmentation" subtitle={`CDR: ${features.ONH_CupToDiscRatio.toFixed(4)}`}>
+                                <FundusSVG mode="onh" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                            </FundusPanel>
+                        </div>
+                        <div className="mt-3 flex items-center gap-5 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-lime-400"></span>Optic Disc</span>
+                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Optic Cup</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-3">Extracted Features</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <FeatureGroup title="GLCM (Texture)" rows={[
+                                ['GLCM_Contrast',     fmt(features.GLCM_Contrast)],
+                                ['GLCM_Correlation',  fmt(features.GLCM_Correlation)],
+                                ['GLCM_Energy',       fmt(features.GLCM_Energy)],
+                                ['GLCM_Homogeneity',  fmt(features.GLCM_Homogeneity)],
+                            ]} />
+                            <FeatureGroup title="Vessel & ONH" rows={[
+                                ['Vessel_GVD_pct',     fmt(features.Vessel_GVD_pct)],
+                                ['Vessel_MaxLVD',      fmt(features.Vessel_MaxLVD)],
+                                ['Vessel_Symmetry',    fmt(features.Vessel_Symmetry)],
+                                ['ONH_DiscArea_px2',   fmt(features.ONH_DiscArea_px2)],
+                                ['ONH_CupToDiscRatio', fmt(features.ONH_CupToDiscRatio)],
+                            ]} />
+                            <div className="md:col-span-2">
+                                <FeatureGroup columns={2} title="Intensity Statistics" rows={[
+                                    ['Intensity_Mean',       fmt(features.Intensity_Mean)],
+                                    ['Intensity_StdDev',     fmt(features.Intensity_StdDev)],
+                                    ['Intensity_Variance',   fmt(features.Intensity_Variance)],
+                                    ['Intensity_Skewness',   fmt(features.Intensity_Skewness)],
+                                    ['Intensity_Kurtosis',   fmt(features.Intensity_Kurtosis)],
+                                    ['Intensity_LogKurt',    fmt(features.Intensity_LogKurt)],
+                                    ['Intensity_Entropy',    fmt(features.Intensity_Entropy)],
+                                    ['Intensity_Uniformity', fmt(features.Intensity_Uniformity)],
+                                    ['Intensity_Smoothness', fmt(features.Intensity_Smoothness)],
+                                    ['Intensity_DynRange',   fmt(features.Intensity_DynRange)],
+                                ]} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-100 flex justify-end gap-3 px-8 py-4">
+                    <button onClick={onClose} className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm">Close</button>
+                    <button onClick={() => window.print && window.print()} className="px-5 py-2 premium-gradient text-white rounded-xl font-bold text-sm">
+                        <i className="fa-solid fa-file-export mr-2"></i>Print Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Main Application
+const App = () => {
+    // App-wide state
+    const [isAuthenticated, setAuthenticated] = useState(false);
+    const [user, setUser] = useState(null);
+    const [view, setView] = useState('dashboard');
+    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [currentPatient, setCurrentPatient] = useState(MOCK_PATIENTS[0]);
+    const [lastScanResult, setLastScanResult] = useState(null);
+
+    // Record panel modal
+    const [modalRecord, setModalRecord] = useState(null);
+
+    // Toast system
+    const [ToastComponent, triggerToast] = useToast();
+
+    const onLogout = () => {
+        setAuthenticated(false);
+        setUser(null);
+        setView('dashboard');
+        triggerToast("You have been logged out.");
+    };
+
+    if (!isAuthenticated)
+        return <AuthPage onAuth={u => {setAuthenticated(true); setUser(u); triggerToast('Welcome, '+u.name+'!'); }} />;
+
+    // For more interactive experience, pass in handlers for all key actions
+    return (
+        <div className="app-shell flex min-h-screen">
+            <Sidebar currentView={view} setView={setView} user={user} onLogout={onLogout} />
+            {/* Main content */}
+            <main className="flex-1 ml-72 p-12 lg:p-16">
+                <header className="flex justify-between items-center mb-12">
+                    <GlobalSearch onPickRecord={setModalRecord} setView={setView} />
+                    <div className="flex items-center gap-6">
+                        <NotificationBell
+                            notifications={notifications}
+                            clearAll={() => { setNotifications([]); triggerToast("Notifications cleared!") }}
+                        />
+                        <div className="h-6 w-[1px] bg-slate-200"></div>
+                        <div className="text-right hidden sm:block">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Instance</p>
+                            <p className="text-xs font-bold text-[#1a1a1e]">Calisto VisionCare</p>
+                        </div>
+                    </div>
+                </header>
+                {/* Main views */}
+                {view === 'dashboard' &&
+                  <Dashboard
+                    onExport={() => triggerToast("Report exported to PDF (demo).")}
+                    onNewDiagnostic={() => {
+                        setView('screening');
+                        triggerToast('Navigate to diagnostics.');
+                    }}
+                    analysesToday={MOCK_RECORDS.length + 12}
+                    alerts={MOCK_RECORDS.filter(r=>r.result!=="Healthy").length}
+                    statsChartDemo={() => triggerToast("Bar chart reacts to interaction (demo).")}
+                    recordsDemo={MOCK_RECORDS}
+                    onRecordClick={setModalRecord}
+                  />
+                }
+                {view === 'screening' &&
+                  <Diagnostics onResultSubmit={setLastScanResult} showToast={triggerToast} />
+                }
+                {view === 'records' &&
+                  <PatientRegistry
+                    onRecordClick={setModalRecord}
+                  />
+                }
+                {view === 'analytics' &&
+                  <Analytics showToast={triggerToast} />
+                }
+                {view === 'settings' &&
+                  <Settings showToast={triggerToast}/>
+                }
+                <ToastComponent />
+                {modalRecord && <RecordModal record={modalRecord} onClose={()=>setModalRecord(null)} />}
+            </main>
+        </div>
+    );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
