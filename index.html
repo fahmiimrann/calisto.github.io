@@ -173,10 +173,10 @@ const { useState, useEffect, useRef, useMemo } = React;
 
 // Replace this with your Render backend URL after deployment.
 // Example: const API_BASE_URL = "https://ocuvision-backend.onrender.com";
-const API_BASE_URL = "";
+const API_BASE_URL = "https://ocuvision-backend.onrender.com";
 
 function isBackendConfigured() {
-    return API_BASE_URL.trim() && !API_BASE_URL.includes("https://ocuvision-backend.onrender.com");
+    return API_BASE_URL.trim() && !API_BASE_URL.includes("your-render-backend-name");
 }
 
 async function apiRequest(path, options = {}) {
