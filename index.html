@@ -216,6 +216,12 @@ function normalizeAnalysisResult(data, fileName) {
     };
 }
 
+function formatFileSize(bytes = 0) {
+    if (!bytes) return "Built-in";
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // --- Mock Data ---
 const MOCK_USERS = [
     { username: "1", password: "1", type: "intern", name: "Fahmi" },
@@ -1105,12 +1111,92 @@ function Analytics({ showToast }) {
 function Settings({ showToast }) {
     const [tab, setTab] = useState('account');
     const [twoFactor, setTwoFactor] = useState(false);
+    const [aiModels, setAiModels] = useState([]);
+    const [activeModelId, setActiveModelId] = useState('');
+    const [modelsLoading, setModelsLoading] = useState(false);
+    const [modelUploading, setModelUploading] = useState(false);
+    const modelFileRef = useRef();
     const tabs = [
         { id: 'account', label: 'Staff Account', icon: 'fa-user' },
         { id: 'device', label: 'Device Link', icon: 'fa-desktop' },
         { id: 'security', label: 'Data Privacy', icon: 'fa-shield-halved' },
         { id: 'system', label: 'AI Core', icon: 'fa-bolt' }
     ];
+
+    useEffect(() => {
+        if (tab === 'system') {
+            loadModels();
+        }
+    }, [tab]);
+
+    async function loadModels() {
+        if (!isBackendConfigured()) {
+            setAiModels([{ id: 'demo-retina-core', name: 'Demo Retina Core', originalName: 'Built-in demo backend logic', type: 'demo', size: 0, active: true }]);
+            setActiveModelId('demo-retina-core');
+            return;
+        }
+
+        try {
+            setModelsLoading(true);
+            const data = await apiRequest('/api/models');
+            setAiModels(data.models || []);
+            setActiveModelId(data.activeModel?.id || data.models?.find(model => model.active)?.id || '');
+        } catch (err) {
+            showToast && showToast(err.message || 'Could not load AI models.');
+        } finally {
+            setModelsLoading(false);
+        }
+    }
+
+    async function uploadModel(e) {
+        const selected = e.target.files?.[0];
+        if (!selected) return;
+
+        if (!isBackendConfigured()) {
+            showToast && showToast('Connect the Render backend before uploading models.');
+            return;
+        }
+
+        try {
+            setModelUploading(true);
+            const formData = new FormData();
+            formData.append('model', selected);
+            formData.append('name', selected.name.replace(/\.[^.]+$/, ''));
+
+            const data = await apiRequest('/api/models', {
+                method: 'POST',
+                body: formData
+            });
+
+            setAiModels(data.models || []);
+            setActiveModelId(data.model?.id || '');
+            showToast && showToast(data.message || 'AI model uploaded.');
+        } catch (err) {
+            showToast && showToast(err.message || 'Model upload failed.');
+        } finally {
+            setModelUploading(false);
+            if (modelFileRef.current) modelFileRef.current.value = '';
+        }
+    }
+
+    async function selectModel(id) {
+        setActiveModelId(id);
+        if (!isBackendConfigured()) return;
+
+        try {
+            const data = await apiRequest('/api/models/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            setAiModels(data.models || []);
+            showToast && showToast(`Model switched to ${data.activeModel?.name || id}.`);
+        } catch (err) {
+            showToast && showToast(err.message || 'Could not switch model.');
+            loadModels();
+        }
+    }
+
     return (
         <div className="max-w-5xl mx-auto calisto-card rounded-3xl overflow-hidden flex min-h-[620px] animate-in fade-in">
             <aside className="w-72 bg-white/55 border-r border-slate-100 p-6 space-y-2">
@@ -1175,16 +1261,71 @@ function Settings({ showToast }) {
                 {tab === 'system' && (
                     <div className="space-y-7">
                         <h2 className="text-2xl font-bold">AI Core Configuration</h2>
-                        <SettingSelect
-                            label="Model"
-                            options={[
-                                { value: 'calisto-ai-1.0', label: 'CalistoAI v1.0' },
-                                { value: 'nova-retina-2.4', label: 'NovaRetina v2.4' },
-                                { value: 'optivision-1.7', label: 'OptiVision v1.7' }
-                            ]}
-                            defaultValue="calisto-ai-1.0"
-                            onChange={value => showToast && showToast(`Model switched to ${value}.`)}
-                        />
+                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div>
+                                    <p className="font-bold">Model Library</p>
+                                    <p className="text-xs text-slate-500 mt-1">Upload MATLAB or exported AI model files, then choose the active model for future screening runs.</p>
+                                </div>
+                                <div>
+                                    <input
+                                        ref={modelFileRef}
+                                        type="file"
+                                        className="hidden"
+                                        accept=".mat,.m,.mlx,.onnx,.h5,.keras,.pkl,.joblib,.zip"
+                                        onChange={uploadModel}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={modelUploading}
+                                        onClick={() => modelFileRef.current?.click()}
+                                        className="px-5 py-3 premium-gradient text-white rounded-2xl font-bold text-sm disabled:opacity-60"
+                                    >
+                                        {modelUploading ? 'Uploading...' : 'Upload AI Model'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Active Model</label>
+                                <div className="relative mt-2">
+                                    <select
+                                        value={activeModelId}
+                                        disabled={modelsLoading || !aiModels.length}
+                                        onChange={e => selectModel(e.target.value)}
+                                        className="w-full appearance-none px-4 py-3 pr-10 bg-white border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 cursor-pointer disabled:opacity-60"
+                                    >
+                                        {aiModels.map(model => (
+                                            <option key={model.id} value={model.id}>
+                                                {model.name} {model.active ? '(Active)' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <i className="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-3">
+                                {aiModels.map(model => (
+                                    <div key={model.id} className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${model.id === activeModelId ? 'bg-white border-slate-300' : 'bg-white/70 border-slate-100'}`}>
+                                        <div>
+                                            <p className="font-bold text-sm">{model.name}</p>
+                                            <p className="text-xs text-slate-500 mt-1">{model.originalName} - {String(model.type || 'model').toUpperCase()} - {formatFileSize(model.size)}</p>
+                                        </div>
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${model.id === activeModelId ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            {model.id === activeModelId ? 'Active' : 'Available'}
+                                        </span>
+                                    </div>
+                                ))}
+                                {!aiModels.length && (
+                                    <p className="text-sm text-slate-500">{modelsLoading ? 'Loading models...' : 'No models uploaded yet.'}</p>
+                                )}
+                            </div>
+
+                            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                                Uploaded MATLAB files are stored and selectable here. To make the backend truly predict from MATLAB, the model still needs to be connected through MATLAB Runtime, MATLAB Production Server, or converted/exported to a Node-compatible format.
+                            </p>
+                        </div>
                         <div>
                             <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Confidence Threshold</label>
                             <input type="range" min="50" max="99" defaultValue="85" className="w-full accent-slate-900 mt-3" />
