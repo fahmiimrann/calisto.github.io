@@ -289,7 +289,7 @@ const Sidebar = ({ currentView, setView, onLogout, user }) => {
         { id: 'screening', label: 'Diagnostics', icon: 'fa-microscope' },
         { id: 'records', label: 'Patient Registry', icon: 'fa-folder-open' },
         { id: 'analytics', label: 'Insights', icon: 'fa-chart-line' },
-        { id: 'settings', label: 'Preferences', icon: 'fa-sliders' },
+        { id: 'settings', label: 'Settings', icon: 'fa-sliders' },
     ];
     return (
         <aside className="w-72 glass-sidebar h-screen fixed left-0 top-0 flex flex-col p-8 z-20">
@@ -319,7 +319,13 @@ const Sidebar = ({ currentView, setView, onLogout, user }) => {
             <div className="mt-auto pt-8 border-t border-slate-100">
                 <div className="flex items-center gap-3 p-2">
                     <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
-                        <img src="IMG_5272.jpg" alt={user?.name || "User"} className="w-full h-full object-cover" />
+                        {user?.avatar ? (
+                            <img src={user.avatar} alt={user?.name || "User"} className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-sm">
+                                {(user?.name || "U").charAt(0).toUpperCase()}
+                            </div>
+                        )}
                     </div>
                     <div className="flex-1 overflow-hidden">
                         <p className="text-sm font-semibold truncate">{user?.name || "Clinician"}</p>
@@ -386,7 +392,7 @@ function NotificationBell({ notifications, clearAll }) {
     );
 }
 
-function GlobalSearch({ onPickRecord, setView }) {
+function GlobalSearch({ records = MOCK_RECORDS, onPickRecord, setView }) {
     const [term, setTerm] = useState("");
     const [open, setOpen] = useState(false);
     const [activeIdx, setActiveIdx] = useState(0);
@@ -407,12 +413,12 @@ function GlobalSearch({ onPickRecord, setView }) {
     }, [open]);
 
     const q = term.trim().toLowerCase();
-    const recordHits = q ? MOCK_RECORDS.filter(r =>
+    const recordHits = q ? records.filter(r =>
         r.patient.toLowerCase().includes(q) ||
         r.id.toLowerCase().includes(q) ||
         r.result.toLowerCase().includes(q) ||
         r.severity.toLowerCase().includes(q) ||
-        r.doctor.toLowerCase().includes(q)
+        (r.doctor || '').toLowerCase().includes(q)
     ).slice(0, 6) : [];
     const patientHits = q ? MOCK_PATIENTS.filter(p =>
         p.name.toLowerCase().includes(q) ||
@@ -441,7 +447,8 @@ function GlobalSearch({ onPickRecord, setView }) {
         <div className="relative w-80" ref={containerRef}>
             <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
             <input
-                type="text"
+                type="search"
+                name="ocuvision-global-search"
                 placeholder="Search patients, records, diseases..."
                 value={term}
                 onChange={e => { setTerm(e.target.value); setOpen(true); setActiveIdx(0); }}
@@ -449,6 +456,12 @@ function GlobalSearch({ onPickRecord, setView }) {
                 onKeyDown={handleKey}
                 className="pl-12 pr-10 py-3 bg-white border border-slate-100 rounded-full text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-blue-50 transition-all"
                 aria-label="Search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
             />
             {term && (
                 <button
@@ -645,7 +658,7 @@ function VolumeBarDemo({ data }) {
     );
 }
 
-const Diagnostics = ({ onResultSubmit, showToast }) => {
+const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) => {
     const [stage, setStage] = useState('connect');
     const [activeOption, setActiveOption] = useState(null);
     const [file, setFile] = useState(null);
@@ -655,6 +668,7 @@ const Diagnostics = ({ onResultSubmit, showToast }) => {
     const [cameraStream, setCameraStream] = useState(null);
     const [webcamError, setWebcamError] = useState('');
     const [device, setDevice] = useState('');
+    const [showPatientForm, setShowPatientForm] = useState(false);
     const fileInputRef = useRef();
     const videoRef = useRef();
 
@@ -766,6 +780,29 @@ const Diagnostics = ({ onResultSubmit, showToast }) => {
         setResult(null);
         setProgress(0);
         setDevice('');
+        setShowPatientForm(false);
+    }
+
+    function handleAddPatient(details) {
+        if (!result) return;
+        const today = new Date().toISOString().slice(0, 10);
+        const severityFromStatus = result.status === 'Alert' ? 'Critical' : result.status === 'Warning' ? 'Moderate' : 'Healthy';
+        const diagnosisLabel = (result.diagnosis || 'No urgent retinal abnormality detected').replace(/^Detection Result:\s*/i, '');
+        const newRecord = {
+            id: `OCU-${Date.now().toString().slice(-6)}`,
+            patient: details.patient,
+            age: details.age,
+            gender: details.gender,
+            date: today,
+            result: diagnosisLabel,
+            confidence: `${result.score}%`,
+            doctor: details.doctor || currentDoctor || 'Unassigned',
+            severity: severityFromStatus
+        };
+        onAddRecord && onAddRecord(newRecord);
+        setShowPatientForm(false);
+        showToast && showToast(`${details.patient} added to Patient Registry.`);
+        reset();
     }
 
     return (
@@ -834,7 +871,9 @@ const Diagnostics = ({ onResultSubmit, showToast }) => {
                         </div>
                         <div className="flex gap-3">
                             <button onClick={reset} className="px-5 py-2 bg-white border border-slate-200 rounded-lg font-bold text-sm">New Scan</button>
-                            <button onClick={() => showToast && showToast('Screening recorded.')} className="px-5 py-2 premium-gradient text-white rounded-lg font-bold text-sm">Finalize & Record</button>
+                            <button onClick={() => setShowPatientForm(true)} className="px-5 py-2 premium-gradient text-white rounded-lg font-bold text-sm">
+                                <i className="fa-solid fa-user-plus mr-2"></i>Finalize & Record
+                            </button>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -867,6 +906,13 @@ const Diagnostics = ({ onResultSubmit, showToast }) => {
                     </div>
                 </div>
             )}
+            <PatientDetailsForm
+                open={showPatientForm}
+                mode="create"
+                initial={{ doctor: currentDoctor || '' }}
+                onCancel={() => setShowPatientForm(false)}
+                onSubmit={handleAddPatient}
+            />
         </div>
     );
 };
@@ -936,27 +982,48 @@ function MetricCard({ label, value }) {
 }
 
 // Patient Registry View - Interactive
-function PatientRegistry({ onRecordClick }) {
+function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecord, userPassword, showToast }) {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('All');
     const [sort, setSort] = useState('date');
     const [page, setPage] = useState(1);
+    const [pendingAction, setPendingAction] = useState(null); // { type: 'edit' | 'delete', record }
+    const [editingRecord, setEditingRecord] = useState(null);
     const pageSize = 5;
     const severityRank = { Critical: 3, Moderate: 2, Healthy: 1 };
     const diseases = ['All', 'Healthy', 'Diabetic Retinopathy', 'Glaucoma', 'AMD', 'Cataract'];
-    let records = MOCK_RECORDS.filter(record => {
+    let visibleRecords = (records || []).filter(record => {
         const term = search.toLowerCase();
-        const matchesSearch = !term || [record.patient, record.id, record.result, record.severity].some(value => value.toLowerCase().includes(term));
+        const matchesSearch = !term || [record.patient, record.id, record.result, record.severity].some(value => String(value).toLowerCase().includes(term));
         const matchesFilter = filter === 'All' || record.result === filter || record.severity === filter;
         return matchesSearch && matchesFilter;
     });
-    records = [...records].sort((a,b) => {
+    visibleRecords = [...visibleRecords].sort((a,b) => {
         if (sort === 'severity') return severityRank[b.severity] - severityRank[a.severity];
         if (sort === 'name') return a.patient.localeCompare(b.patient);
         return b.date.localeCompare(a.date);
     });
-    const totalPages = Math.max(1, Math.ceil(records.length / pageSize));
-    const shown = records.slice((page - 1) * pageSize, page * pageSize);
+    const totalPages = Math.max(1, Math.ceil(visibleRecords.length / pageSize));
+    const shown = visibleRecords.slice((page - 1) * pageSize, page * pageSize);
+
+    function handleVerified() {
+        if (!pendingAction) return;
+        if (pendingAction.type === 'edit') {
+            setEditingRecord(pendingAction.record);
+        } else if (pendingAction.type === 'delete') {
+            onDeleteRecord && onDeleteRecord(pendingAction.record.id);
+            showToast && showToast(`${pendingAction.record.patient}'s record deleted.`);
+        }
+        setPendingAction(null);
+    }
+
+    function handleEditSubmit(details) {
+        if (!editingRecord) return;
+        const updated = { ...editingRecord, ...details };
+        onUpdateRecord && onUpdateRecord(updated);
+        setEditingRecord(null);
+        showToast && showToast('Patient record updated.');
+    }
 
     return (
         <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -1007,9 +1074,17 @@ function PatientRegistry({ onRecordClick }) {
                                 <td className="px-8 py-6 text-slate-500 text-sm">{record.date}</td>
                                 <td className="px-8 py-6"><StatusPill result={record.result} /></td>
                                 <td className="px-8 py-6 text-right">
-                                    <button onClick={() => onRecordClick(record)} className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold">
-                                        <i className="fa-solid fa-eye mr-2"></i>View
-                                    </button>
+                                    <div className="inline-flex items-center gap-2">
+                                        <button onClick={() => onRecordClick(record)} title="View report" className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold">
+                                            <i className="fa-solid fa-eye"></i>
+                                        </button>
+                                        <button onClick={() => setPendingAction({ type: 'edit', record })} title="Edit record (password required)" className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold">
+                                            <i className="fa-solid fa-pen"></i>
+                                        </button>
+                                        <button onClick={() => setPendingAction({ type: 'delete', record })} title="Delete record (password required)" className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -1018,13 +1093,33 @@ function PatientRegistry({ onRecordClick }) {
                 </table>
             </div>
             <div className="flex items-center justify-between mt-5 text-sm text-slate-500">
-                <span>Showing {shown.length} of {records.length} records</span>
+                <span>Showing {shown.length} of {visibleRecords.length} records</span>
                 <div className="flex items-center gap-2">
                     <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-2 bg-white/80 border border-slate-100 rounded-lg disabled:opacity-40">Prev</button>
                     <span className="font-bold">{page}/{totalPages}</span>
                     <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="px-3 py-2 bg-white/80 border border-slate-100 rounded-lg disabled:opacity-40">Next</button>
                 </div>
             </div>
+
+            <PasswordPrompt
+                open={!!pendingAction}
+                title={pendingAction?.type === 'delete' ? 'Confirm Deletion' : 'Confirm Edit'}
+                description={pendingAction
+                    ? `Re-enter your account password to ${pendingAction.type} ${pendingAction.record.patient}'s record.`
+                    : ''}
+                expectedPassword={userPassword}
+                confirmLabel={pendingAction?.type === 'delete' ? 'Verify & Delete' : 'Verify & Edit'}
+                onCancel={() => setPendingAction(null)}
+                onConfirm={handleVerified}
+            />
+
+            <PatientDetailsForm
+                open={!!editingRecord}
+                mode="edit"
+                initial={editingRecord || undefined}
+                onCancel={() => setEditingRecord(null)}
+                onSubmit={handleEditSubmit}
+            />
         </div>
     );
 }
@@ -1108,7 +1203,7 @@ function Analytics({ showToast }) {
         </div>
     );
 }
-function Settings({ showToast }) {
+function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
     const [tab, setTab] = useState('account');
     const [twoFactor, setTwoFactor] = useState(false);
     const [aiModels, setAiModels] = useState([]);
@@ -1116,12 +1211,63 @@ function Settings({ showToast }) {
     const [modelsLoading, setModelsLoading] = useState(false);
     const [modelUploading, setModelUploading] = useState(false);
     const modelFileRef = useRef();
+    const avatarFileRef = useRef();
+    const [profile, setProfile] = useState({
+        name: user?.name || '',
+        email: user?.email || `${user?.username || 'user'}@calisto.com`,
+        avatar: user?.avatar || ''
+    });
+
+    useEffect(() => {
+        setProfile({
+            name: user?.name || '',
+            email: user?.email || `${user?.username || 'user'}@calisto.com`,
+            avatar: user?.avatar || ''
+        });
+    }, [user]);
+
+    function pickAvatar() {
+        avatarFileRef.current?.click();
+    }
+
+    function handleAvatarFile(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+            showToast && showToast('Avatar must be JPG or PNG under 2 MB.');
+            e.target.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = evt => {
+            setProfile(p => ({ ...p, avatar: evt.target.result }));
+            showToast && showToast('Avatar ready. Click Save Profile to apply.');
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    }
+
+    function saveProfile() {
+        if (!profile.name.trim()) {
+            showToast && showToast('Display name cannot be empty.');
+            return;
+        }
+        onUpdateUser && onUpdateUser({
+            name: profile.name.trim(),
+            email: profile.email.trim(),
+            avatar: profile.avatar
+        });
+        showToast && showToast('Profile updated.');
+    }
+
     const tabs = [
         { id: 'account', label: 'Staff Account', icon: 'fa-user' },
         { id: 'device', label: 'Device Link', icon: 'fa-desktop' },
         { id: 'security', label: 'Data Privacy', icon: 'fa-shield-halved' },
         { id: 'system', label: 'AI Core', icon: 'fa-bolt' }
     ];
+
+    const role = user?.type ? user.type.charAt(0).toUpperCase() + user.type.slice(1) : 'Intern / Developer';
 
     useEffect(() => {
         if (tab === 'system') {
@@ -1202,7 +1348,7 @@ function Settings({ showToast }) {
             <aside className="w-72 bg-white/55 border-r border-slate-100 p-6 space-y-2">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-4">Configuration</p>
                 {tabs.map(item => (
-                    <button key={item.id} onClick={() => setTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition ${tab === item.id ? 'premium-gradient text-white font-bold' : 'text-slate-500 hover:bg-white'}`}>
+                    <button type="button" key={item.id} onClick={() => setTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition ${tab === item.id ? 'premium-gradient text-white font-bold' : 'text-slate-500 hover:bg-white'}`}>
                         <i className={`fa-solid ${item.icon} w-5`}></i>{item.label}
                     </button>
                 ))}
@@ -1211,20 +1357,52 @@ function Settings({ showToast }) {
                 {tab === 'account' && (
                     <div className="space-y-7">
                         <h2 className="text-2xl font-bold">Account Information</h2>
+                        <p className="text-sm text-slate-500 -mt-4">Personal details for your OcuVision account. These fields control your sign-in identity only.</p>
                         <div className="flex items-center gap-5 p-5 bg-slate-50 rounded-3xl border border-slate-100">
-                            <img src="IMG_5272.jpg" className="w-20 h-20 rounded-2xl bg-white" />
+                            <div className="w-20 h-20 rounded-2xl bg-white overflow-hidden flex items-center justify-center border border-slate-100">
+                                {profile.avatar ? (
+                                    <img src={profile.avatar} className="w-full h-full object-cover" alt="Avatar" />
+                                ) : (
+                                    <span className="text-2xl font-bold text-slate-400">{(profile.name || 'U').charAt(0).toUpperCase()}</span>
+                                )}
+                            </div>
                             <div>
-                                <button onClick={() => showToast && showToast('Avatar updated.')} className="px-4 py-2 premium-gradient text-white rounded-xl text-xs font-bold">Update Avatar</button>
+                                <input
+                                    ref={avatarFileRef}
+                                    type="file"
+                                    accept="image/png,image/jpeg"
+                                    className="hidden"
+                                    onChange={handleAvatarFile}
+                                />
+                                <button type="button" onClick={pickAvatar} className="px-4 py-2 premium-gradient text-white rounded-xl text-xs font-bold">Update Avatar</button>
                                 <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest">JPG or PNG - max 2MB</p>
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-5">
-                            <SettingInput label="Display Name" value="Mohammad Fahmi Imran" />
-                            <SettingInput label="Staff ID" value="STF-2026-0067" disabled />
-                            <SettingInput label="Work Email" value="fahmi.imran@calisto.com" />
-                            <SettingInput label="Assigned Role" value="Intern / Developer" disabled />
+                            <div>
+                                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Display Name</label>
+                                <input
+                                    type="text"
+                                    value={profile.name}
+                                    onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
+                                    className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm"
+                                    autoComplete="off"
+                                />
+                            </div>
+                            <SettingInput label="Username" value={user?.username || ''} disabled />
+                            <div>
+                                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Work Email</label>
+                                <input
+                                    type="email"
+                                    value={profile.email}
+                                    onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
+                                    className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm"
+                                    autoComplete="off"
+                                />
+                            </div>
+                            <SettingInput label="Assigned Role" value={role} disabled />
                         </div>
-                        <button onClick={() => showToast && showToast('Account preferences saved.')} className="px-8 py-3 premium-gradient text-white rounded-2xl font-bold text-sm">Save Preferences</button>
+                        <button type="button" onClick={saveProfile} className="px-8 py-3 premium-gradient text-white rounded-2xl font-bold text-sm">Save Profile</button>
                     </div>
                 )}
                 {tab === 'device' && (
@@ -1246,11 +1424,32 @@ function Settings({ showToast }) {
                     <div className="space-y-7">
                         <h2 className="text-2xl font-bold">Security & Privacy</h2>
                         <div className="grid md:grid-cols-2 gap-5">
-                            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
+                            <form
+                                className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-3"
+                                autoComplete="off"
+                                onSubmit={e => {
+                                    e.preventDefault();
+                                    const next = e.currentTarget.elements['new-password']?.value || '';
+                                    if (!next || next.length < 4) {
+                                        showToast && showToast('Password must be at least 4 characters.');
+                                        return;
+                                    }
+                                    onChangePassword && onChangePassword(next);
+                                    e.currentTarget.reset();
+                                    showToast && showToast('Password changed.');
+                                }}
+                            >
                                 <p className="font-bold">Change Password</p>
-                                <input type="password" placeholder="New password" className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl" />
-                                <button onClick={() => showToast && showToast('Password changed.')} className="w-full py-3 premium-gradient text-white rounded-xl font-bold text-sm">Change Password</button>
-                            </div>
+                                <input type="text" name="username" autoComplete="username" defaultValue={user?.username || ''} className="hidden" tabIndex={-1} aria-hidden="true" readOnly />
+                                <input
+                                    type="password"
+                                    name="new-password"
+                                    placeholder="New password"
+                                    autoComplete="new-password"
+                                    className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl"
+                                />
+                                <button type="submit" className="w-full py-3 premium-gradient text-white rounded-xl font-bold text-sm">Change Password</button>
+                            </form>
                             <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
                                 <SettingToggle label="Enable Two-Factor Authentication" active={twoFactor} onClick={() => setTwoFactor(v => !v)} />
                                 <p className="text-xs text-slate-500 mt-4">Adds an extra layer of protection at login.</p>
@@ -1390,8 +1589,195 @@ function SettingToggle({ label, active = false, onClick }) {
         </button>
     );
 }
+// Reusable password verification modal — used before edit/delete in Patient Registry.
+function PasswordPrompt({ open, title, description, expectedPassword, onCancel, onConfirm, confirmLabel = 'Confirm' }) {
+    const [pw, setPw] = useState('');
+    const [err, setErr] = useState('');
+    const [show, setShow] = useState(false);
+
+    useEffect(() => {
+        if (!open) {
+            setPw('');
+            setErr('');
+            setShow(false);
+        }
+    }, [open]);
+
+    if (!open) return null;
+
+    function submit(e) {
+        e.preventDefault();
+        if (!pw) {
+            setErr('Please enter your password to continue.');
+            return;
+        }
+        if (expectedPassword && pw !== expectedPassword) {
+            setErr('Incorrect password. Please try again.');
+            return;
+        }
+        onConfirm();
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onCancel}>
+            <form onMouseDown={e => e.stopPropagation()} onSubmit={submit} autoComplete="off" className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-7 space-y-5">
+                <div className="flex items-start gap-4">
+                    <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                        <i className="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="text-lg font-bold text-[#1a1a1e]">{title || 'Verify Your Password'}</h3>
+                        <p className="text-sm text-slate-500 mt-1">{description || 'For security, please re-enter your account password to continue.'}</p>
+                    </div>
+                </div>
+                <div className="relative">
+                    <input
+                        type={show ? 'text' : 'password'}
+                        value={pw}
+                        onChange={e => { setPw(e.target.value); setErr(''); }}
+                        placeholder="Account password"
+                        autoFocus
+                        autoComplete="current-password"
+                        className="w-full px-4 py-3 pr-12 bg-slate-50 border border-slate-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setShow(s => !s)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100"
+                        aria-label={show ? 'Hide password' : 'Show password'}
+                    >
+                        <i className={`fa-solid ${show ? 'fa-eye-slash' : 'fa-eye'} text-sm`}></i>
+                    </button>
+                </div>
+                {err && <p className="text-xs text-rose-500 -mt-2">{err}</p>}
+                <div className="flex justify-end gap-3 pt-1">
+                    <button type="button" onClick={onCancel} className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold">Cancel</button>
+                    <button type="submit" className="px-5 py-2 premium-gradient text-white rounded-xl text-sm font-bold">{confirmLabel}</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+// Patient details form shown after a successful AI scan or when editing an existing record.
+function PatientDetailsForm({ open, mode = 'create', initial, onCancel, onSubmit }) {
+    const [form, setForm] = useState({
+        patient: '',
+        age: '',
+        gender: 'Female',
+        doctor: ''
+    });
+
+    useEffect(() => {
+        if (!open) return;
+        setForm({
+            patient: initial?.patient || '',
+            age: initial?.age != null ? String(initial.age) : '',
+            gender: initial?.gender || 'Female',
+            doctor: initial?.doctor || ''
+        });
+    }, [open, initial]);
+
+    if (!open) return null;
+
+    function update(field, value) {
+        setForm(f => ({ ...f, [field]: value }));
+    }
+
+    function submit(e) {
+        e.preventDefault();
+        if (!form.patient.trim() || !form.age) return;
+        onSubmit({
+            patient: form.patient.trim(),
+            age: Number(form.age),
+            gender: form.gender,
+            doctor: form.doctor.trim() || 'Unassigned'
+        });
+    }
+
+    const heading = mode === 'edit' ? 'Edit Patient Record' : 'Patient Details';
+    const description = mode === 'edit'
+        ? 'Update the patient information for this record.'
+        : 'Enter the patient information before adding this scan to the Patient Registry.';
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onCancel}>
+            <form onMouseDown={e => e.stopPropagation()} onSubmit={submit} autoComplete="off" className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-8 space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">{mode === 'edit' ? 'Edit Record' : 'New Diagnostic Record'}</p>
+                        <h3 className="text-xl font-bold text-[#1a1a1e] mt-1">{heading}</h3>
+                        <p className="text-sm text-slate-500 mt-1">{description}</p>
+                    </div>
+                    <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-700 p-1" aria-label="Close">
+                        <i className="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Patient Full Name</label>
+                        <input
+                            type="text"
+                            required
+                            value={form.patient}
+                            onChange={e => update('patient', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Age</label>
+                        <input
+                            type="number"
+                            min="0"
+                            max="130"
+                            required
+                            value={form.age}
+                            onChange={e => update('age', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Gender</label>
+                        <select
+                            value={form.gender}
+                            onChange={e => update('gender', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                        >
+                            <option>Female</option>
+                            <option>Male</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Attending Clinician</label>
+                        <input
+                            type="text"
+                            value={form.doctor}
+                            onChange={e => update('doctor', e.target.value)}
+                            placeholder="e.g. Dr. Julian Voss"
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-1">
+                    <button type="button" onClick={onCancel} className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold">Cancel</button>
+                    <button type="submit" className="px-5 py-2 premium-gradient text-white rounded-xl text-sm font-bold">
+                        {mode === 'edit' ? 'Save Changes' : 'Add to Patient Registry'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
 // Login/Register Screen (interactive)
 function AuthPage({ onAuth }) {
+    function authWithPassword(authedUser, password) {
+        onAuth({ ...authedUser, password });
+    }
     const [register, setRegister] = useState(false);
     const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "doctor" });
     const [error, setError] = useState("");
@@ -1424,7 +1810,7 @@ function AuthPage({ onAuth }) {
                             type: form.type
                         })
                     });
-                    onAuth(data.user || { username: form.username, type: form.type, name: form.name });
+                    authWithPassword(data.user || { username: form.username, type: form.type, name: form.name }, form.password);
                 } catch (err) {
                     setError(err.message || "Registration failed.");
                 } finally {
@@ -1443,7 +1829,7 @@ function AuthPage({ onAuth }) {
                 type: form.type,
                 name: form.name
             });
-            onAuth({ username: form.username, type: form.type, name: form.name });
+            authWithPassword({ username: form.username, type: form.type, name: form.name }, form.password);
         } else {
             if (isBackendConfigured()) {
                 try {
@@ -1456,7 +1842,7 @@ function AuthPage({ onAuth }) {
                             password: form.password
                         })
                     });
-                    onAuth(data.user || data);
+                    authWithPassword(data.user || data, form.password);
                 } catch (err) {
                     setError(err.message || "Login failed.");
                 } finally {
@@ -1469,7 +1855,7 @@ function AuthPage({ onAuth }) {
                 u=>u.username===form.username && u.password===form.password
             );
             if (!found) return setError("Invalid username or password.");
-            onAuth({ username: found.username, type: found.type, name: found.name });
+            authWithPassword({ username: found.username, type: found.type, name: found.name }, form.password);
         }
     }
     return (
@@ -2002,9 +2388,10 @@ const App = () => {
     // App-wide state
     const [isAuthenticated, setAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
+    const [userPassword, setUserPassword] = useState('');
     const [view, setView] = useState('dashboard');
     const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
-    const [currentPatient, setCurrentPatient] = useState(MOCK_PATIENTS[0]);
+    const [records, setRecords] = useState(MOCK_RECORDS);
     const [lastScanResult, setLastScanResult] = useState(null);
 
     // Record panel modal
@@ -2016,12 +2403,39 @@ const App = () => {
     const onLogout = () => {
         setAuthenticated(false);
         setUser(null);
+        setUserPassword('');
         setView('dashboard');
         triggerToast("You have been logged out.");
     };
 
+    function handleAuth(u) {
+        const { password, ...safeUser } = u || {};
+        setAuthenticated(true);
+        setUser(safeUser);
+        setUserPassword(password || '');
+        triggerToast('Welcome, ' + (safeUser.name || safeUser.username || 'user') + '!');
+    }
+
+    function handleUpdateUser(patch) {
+        setUser(prev => ({ ...(prev || {}), ...patch }));
+    }
+
+    function handleChangePassword(next) {
+        setUserPassword(next);
+    }
+
+    function addRecord(record) {
+        setRecords(prev => [record, ...prev]);
+    }
+    function updateRecord(record) {
+        setRecords(prev => prev.map(r => r.id === record.id ? { ...r, ...record } : r));
+    }
+    function deleteRecord(id) {
+        setRecords(prev => prev.filter(r => r.id !== id));
+    }
+
     if (!isAuthenticated)
-        return <AuthPage onAuth={u => {setAuthenticated(true); setUser(u); triggerToast('Welcome, '+u.name+'!'); }} />;
+        return <AuthPage onAuth={handleAuth} />;
 
     // For more interactive experience, pass in handlers for all key actions
     return (
@@ -2030,7 +2444,7 @@ const App = () => {
             {/* Main content */}
             <main className="flex-1 ml-72 p-12 lg:p-16">
                 <header className="flex justify-between items-center mb-12">
-                    <GlobalSearch onPickRecord={setModalRecord} setView={setView} />
+                    <GlobalSearch records={records} onPickRecord={setModalRecord} setView={setView} />
                     <div className="flex items-center gap-6">
                         <NotificationBell
                             notifications={notifications}
@@ -2051,26 +2465,41 @@ const App = () => {
                         setView('screening');
                         triggerToast('Navigate to diagnostics.');
                     }}
-                    analysesToday={MOCK_RECORDS.length + 12}
-                    alerts={MOCK_RECORDS.filter(r=>r.result!=="Healthy").length}
+                    analysesToday={records.length + 12}
+                    alerts={records.filter(r=>r.result!=="Healthy").length}
                     statsChartDemo={() => triggerToast("Bar chart reacts to interaction (demo).")}
-                    recordsDemo={MOCK_RECORDS}
+                    recordsDemo={records}
                     onRecordClick={setModalRecord}
                   />
                 }
                 {view === 'screening' &&
-                  <Diagnostics onResultSubmit={setLastScanResult} showToast={triggerToast} />
+                  <Diagnostics
+                    onResultSubmit={setLastScanResult}
+                    onAddRecord={addRecord}
+                    currentDoctor={user?.name || ''}
+                    showToast={triggerToast}
+                  />
                 }
                 {view === 'records' &&
                   <PatientRegistry
+                    records={records}
                     onRecordClick={setModalRecord}
+                    onUpdateRecord={updateRecord}
+                    onDeleteRecord={deleteRecord}
+                    userPassword={userPassword}
+                    showToast={triggerToast}
                   />
                 }
                 {view === 'analytics' &&
                   <Analytics showToast={triggerToast} />
                 }
                 {view === 'settings' &&
-                  <Settings showToast={triggerToast}/>
+                  <Settings
+                    showToast={triggerToast}
+                    user={user}
+                    onUpdateUser={handleUpdateUser}
+                    onChangePassword={handleChangePassword}
+                  />
                 }
                 <ToastComponent />
                 {modalRecord && <RecordModal record={modalRecord} onClose={()=>setModalRecord(null)} />}
