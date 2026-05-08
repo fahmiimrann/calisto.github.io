@@ -174,21 +174,49 @@ const { useState, useEffect, useRef, useMemo } = React;
 // Replace this with your Render backend URL after deployment.
 // Example: const API_BASE_URL = "https://ocuvision-backend.onrender.com";
 const API_BASE_URL = "https://ocuvision-backend.onrender.com";
+const AUTH_TOKEN_KEY = 'ocuvision-auth-token';
 
 function isBackendConfigured() {
     return API_BASE_URL.trim() && !API_BASE_URL.includes("your-render-backend-name");
 }
 
+function getAuthToken() {
+    try { return localStorage.getItem(AUTH_TOKEN_KEY) || ''; } catch (e) { return ''; }
+}
+function setAuthToken(token) {
+    try {
+        if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+        else localStorage.removeItem(AUTH_TOKEN_KEY);
+    } catch (e) {}
+}
+
 async function apiRequest(path, options = {}) {
-    const response = await fetch(`${API_BASE_URL}${path}`, options);
+    const headers = new Headers(options.headers || {});
+    const token = getAuthToken();
+    if (token && !headers.has('Authorization')) {
+        headers.set('Authorization', `Bearer ${token}`);
+    }
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
     const contentType = response.headers.get("content-type") || "";
     const data = contentType.includes("application/json") ? await response.json() : {};
 
     if (!response.ok) {
-        throw new Error(data.error || data.message || "Backend request failed.");
+        const err = new Error(data.error || data.message || "Backend request failed.");
+        err.status = response.status;
+        err.payload = data;
+        throw err;
     }
 
     return data;
+}
+
+// Convenience helpers wrapping the JSON endpoints we use most.
+function apiJson(path, method, body) {
+    return apiRequest(path, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined
+    });
 }
 
 async function dataUrlToFile(dataUrl, fileName) {
@@ -783,13 +811,12 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
         setShowPatientForm(false);
     }
 
-    function handleAddPatient(details) {
+    async function handleAddPatient(details) {
         if (!result) return;
         const today = new Date().toISOString().slice(0, 10);
         const severityFromStatus = result.status === 'Alert' ? 'Critical' : result.status === 'Warning' ? 'Moderate' : 'Healthy';
         const diagnosisLabel = (result.diagnosis || 'No urgent retinal abnormality detected').replace(/^Detection Result:\s*/i, '');
         const newRecord = {
-            id: `OCU-${Date.now().toString().slice(-6)}`,
             patient: details.patient,
             age: details.age,
             gender: details.gender,
@@ -799,10 +826,14 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
             doctor: details.doctor || currentDoctor || 'Unassigned',
             severity: severityFromStatus
         };
-        onAddRecord && onAddRecord(newRecord);
-        setShowPatientForm(false);
-        showToast && showToast(`${details.patient} added to Patient Registry.`);
-        reset();
+        try {
+            await onAddRecord(newRecord);
+            setShowPatientForm(false);
+            showToast && showToast(`${details.patient} added to Patient Registry.`);
+            reset();
+        } catch (err) {
+            showToast && showToast(err.message || 'Could not save patient record.');
+        }
     }
 
     return (
@@ -982,13 +1013,14 @@ function MetricCard({ label, value }) {
 }
 
 // Patient Registry View - Interactive
-function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecord, userPassword, showToast }) {
+function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecord, onVerifyPassword, showToast }) {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('All');
     const [sort, setSort] = useState('date');
     const [page, setPage] = useState(1);
     const [pendingAction, setPendingAction] = useState(null); // { type: 'edit' | 'delete', record }
     const [editingRecord, setEditingRecord] = useState(null);
+    const [verifiedPassword, setVerifiedPassword] = useState('');
     const pageSize = 5;
     const severityRank = { Critical: 3, Moderate: 2, Healthy: 1 };
     const diseases = ['All', 'Healthy', 'Diabetic Retinopathy', 'Glaucoma', 'AMD', 'Cataract'];
@@ -1006,23 +1038,34 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
     const totalPages = Math.max(1, Math.ceil(visibleRecords.length / pageSize));
     const shown = visibleRecords.slice((page - 1) * pageSize, page * pageSize);
 
-    function handleVerified() {
+    async function handleVerified(password) {
         if (!pendingAction) return;
-        if (pendingAction.type === 'edit') {
-            setEditingRecord(pendingAction.record);
-        } else if (pendingAction.type === 'delete') {
-            onDeleteRecord && onDeleteRecord(pendingAction.record.id);
-            showToast && showToast(`${pendingAction.record.patient}'s record deleted.`);
+        const action = pendingAction;
+        if (action.type === 'edit') {
+            setVerifiedPassword(password);
+            setEditingRecord(action.record);
+            setPendingAction(null);
+        } else if (action.type === 'delete') {
+            try {
+                await onDeleteRecord(action.record.id, password);
+                showToast && showToast(`${action.record.patient}'s record deleted.`);
+            } catch (err) {
+                showToast && showToast(err.message || 'Could not delete record.');
+            }
+            setPendingAction(null);
         }
-        setPendingAction(null);
     }
 
-    function handleEditSubmit(details) {
+    async function handleEditSubmit(details) {
         if (!editingRecord) return;
-        const updated = { ...editingRecord, ...details };
-        onUpdateRecord && onUpdateRecord(updated);
-        setEditingRecord(null);
-        showToast && showToast('Patient record updated.');
+        try {
+            await onUpdateRecord({ ...editingRecord, ...details }, verifiedPassword);
+            setEditingRecord(null);
+            setVerifiedPassword('');
+            showToast && showToast('Patient record updated.');
+        } catch (err) {
+            showToast && showToast(err.message || 'Could not update record.');
+        }
     }
 
     return (
@@ -1107,7 +1150,7 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
                 description={pendingAction
                     ? `Re-enter your account password to ${pendingAction.type} ${pendingAction.record.patient}'s record.`
                     : ''}
-                expectedPassword={userPassword}
+                onVerify={onVerifyPassword}
                 confirmLabel={pendingAction?.type === 'delete' ? 'Verify & Delete' : 'Verify & Edit'}
                 onCancel={() => setPendingAction(null)}
                 onConfirm={handleVerified}
@@ -1210,54 +1253,17 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
     const [activeModelId, setActiveModelId] = useState('');
     const [modelsLoading, setModelsLoading] = useState(false);
     const [modelUploading, setModelUploading] = useState(false);
+    const [editingAccount, setEditingAccount] = useState(false);
     const modelFileRef = useRef();
-    const avatarFileRef = useRef();
-    const [profile, setProfile] = useState({
-        name: user?.name || '',
-        email: user?.email || `${user?.username || 'user'}@calisto.com`,
-        avatar: user?.avatar || ''
-    });
 
-    useEffect(() => {
-        setProfile({
-            name: user?.name || '',
-            email: user?.email || `${user?.username || 'user'}@calisto.com`,
-            avatar: user?.avatar || ''
-        });
-    }, [user]);
-
-    function pickAvatar() {
-        avatarFileRef.current?.click();
-    }
-
-    function handleAvatarFile(e) {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        if (file.size > 2 * 1024 * 1024) {
-            showToast && showToast('Avatar must be JPG or PNG under 2 MB.');
-            e.target.value = '';
-            return;
+    async function handleAccountSave(next) {
+        try {
+            await onUpdateUser(next);
+            setEditingAccount(false);
+            showToast && showToast('Account information updated.');
+        } catch (err) {
+            // Failure toast is already raised by handleUpdateUser in App.
         }
-        const reader = new FileReader();
-        reader.onload = evt => {
-            setProfile(p => ({ ...p, avatar: evt.target.result }));
-            showToast && showToast('Avatar ready. Click Save Profile to apply.');
-        };
-        reader.readAsDataURL(file);
-        e.target.value = '';
-    }
-
-    function saveProfile() {
-        if (!profile.name.trim()) {
-            showToast && showToast('Display name cannot be empty.');
-            return;
-        }
-        onUpdateUser && onUpdateUser({
-            name: profile.name.trim(),
-            email: profile.email.trim(),
-            avatar: profile.avatar
-        });
-        showToast && showToast('Profile updated.');
     }
 
     const tabs = [
@@ -1268,6 +1274,7 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
     ];
 
     const role = user?.type ? user.type.charAt(0).toUpperCase() + user.type.slice(1) : 'Intern / Developer';
+    const displayEmail = user?.email || `${user?.username || 'user'}@calisto.com`;
 
     useEffect(() => {
         if (tab === 'system') {
@@ -1356,53 +1363,44 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
             <section className="flex-1 p-10">
                 {tab === 'account' && (
                     <div className="space-y-7">
-                        <h2 className="text-2xl font-bold">Account Information</h2>
-                        <p className="text-sm text-slate-500 -mt-4">Personal details for your OcuVision account. These fields control your sign-in identity only.</p>
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-2xl font-bold">Account Information</h2>
+                                <p className="text-sm text-slate-500 mt-1">Personal details for your OcuVision account. These fields control your sign-in identity only.</p>
+                            </div>
+                            <button type="button" onClick={() => setEditingAccount(true)} className="shrink-0 px-5 py-2.5 premium-gradient text-white rounded-xl text-sm font-bold">
+                                <i className="fa-solid fa-pen mr-2"></i>Edit Account
+                            </button>
+                        </div>
+
                         <div className="flex items-center gap-5 p-5 bg-slate-50 rounded-3xl border border-slate-100">
                             <div className="w-20 h-20 rounded-2xl bg-white overflow-hidden flex items-center justify-center border border-slate-100">
-                                {profile.avatar ? (
-                                    <img src={profile.avatar} className="w-full h-full object-cover" alt="Avatar" />
+                                {user?.avatar ? (
+                                    <img src={user.avatar} className="w-full h-full object-cover" alt="Avatar" />
                                 ) : (
-                                    <span className="text-2xl font-bold text-slate-400">{(profile.name || 'U').charAt(0).toUpperCase()}</span>
+                                    <span className="text-2xl font-bold text-slate-400">{(user?.name || 'U').charAt(0).toUpperCase()}</span>
                                 )}
                             </div>
                             <div>
-                                <input
-                                    ref={avatarFileRef}
-                                    type="file"
-                                    accept="image/png,image/jpeg"
-                                    className="hidden"
-                                    onChange={handleAvatarFile}
-                                />
-                                <button type="button" onClick={pickAvatar} className="px-4 py-2 premium-gradient text-white rounded-xl text-xs font-bold">Update Avatar</button>
-                                <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest">JPG or PNG - max 2MB</p>
+                                <p className="font-bold text-lg text-[#1a1a1e]">{user?.name || 'Clinician'}</p>
+                                <p className="text-xs text-slate-500 mt-1">{role}</p>
                             </div>
                         </div>
+
                         <div className="grid grid-cols-2 gap-5">
-                            <div>
-                                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Display Name</label>
-                                <input
-                                    type="text"
-                                    value={profile.name}
-                                    onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
-                                    className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm"
-                                    autoComplete="off"
-                                />
-                            </div>
-                            <SettingInput label="Username" value={user?.username || ''} disabled />
-                            <div>
-                                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Work Email</label>
-                                <input
-                                    type="email"
-                                    value={profile.email}
-                                    onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
-                                    className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm"
-                                    autoComplete="off"
-                                />
-                            </div>
-                            <SettingInput label="Assigned Role" value={role} disabled />
+                            <ReadOnlyField label="Display Name" value={user?.name || '-'} />
+                            <ReadOnlyField label="Username" value={user?.username || '-'} />
+                            <ReadOnlyField label="Work Email" value={displayEmail} />
+                            <ReadOnlyField label="Assigned Role" value={role} />
                         </div>
-                        <button type="button" onClick={saveProfile} className="px-8 py-3 premium-gradient text-white rounded-2xl font-bold text-sm">Save Profile</button>
+
+                        <AccountEditModal
+                            open={editingAccount}
+                            user={user}
+                            onCancel={() => setEditingAccount(false)}
+                            onSubmit={handleAccountSave}
+                            showToast={showToast}
+                        />
                     </div>
                 )}
                 {tab === 'device' && (
@@ -1427,24 +1425,41 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                             <form
                                 className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-3"
                                 autoComplete="off"
-                                onSubmit={e => {
+                                onSubmit={async e => {
                                     e.preventDefault();
-                                    const next = e.currentTarget.elements['new-password']?.value || '';
-                                    if (!next || next.length < 4) {
-                                        showToast && showToast('Password must be at least 4 characters.');
+                                    const form = e.currentTarget;
+                                    const current = form.elements['current-password']?.value || '';
+                                    const next = form.elements['new-password']?.value || '';
+                                    if (!current) {
+                                        showToast && showToast('Please enter your current password.');
                                         return;
                                     }
-                                    onChangePassword && onChangePassword(next);
-                                    e.currentTarget.reset();
-                                    showToast && showToast('Password changed.');
+                                    if (!next || next.length < 4) {
+                                        showToast && showToast('New password must be at least 4 characters.');
+                                        return;
+                                    }
+                                    try {
+                                        await onChangePassword(current, next);
+                                        form.reset();
+                                        showToast && showToast('Password changed.');
+                                    } catch (err) {
+                                        showToast && showToast(err.message || 'Could not change password.');
+                                    }
                                 }}
                             >
                                 <p className="font-bold">Change Password</p>
                                 <input type="text" name="username" autoComplete="username" defaultValue={user?.username || ''} className="hidden" tabIndex={-1} aria-hidden="true" readOnly />
                                 <input
                                     type="password"
+                                    name="current-password"
+                                    placeholder="Current password"
+                                    autoComplete="current-password"
+                                    className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl"
+                                />
+                                <input
+                                    type="password"
                                     name="new-password"
-                                    placeholder="New password"
+                                    placeholder="New password (min 4 chars)"
                                     autoComplete="new-password"
                                     className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl"
                                 />
@@ -1546,6 +1561,17 @@ function SettingInput({ label, value, disabled = false }) {
     );
 }
 
+function ReadOnlyField({ label, value }) {
+    return (
+        <div>
+            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">{label}</label>
+            <div className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm text-slate-700 truncate">
+                {value}
+            </div>
+        </div>
+    );
+}
+
 function SettingSelect({ label, options, defaultValue, onChange }) {
     const [value, setValue] = useState(defaultValue ?? options?.[0]?.value);
     function handleChange(e) {
@@ -1590,22 +1616,26 @@ function SettingToggle({ label, active = false, onClick }) {
     );
 }
 // Reusable password verification modal — used before edit/delete in Patient Registry.
-function PasswordPrompt({ open, title, description, expectedPassword, onCancel, onConfirm, confirmLabel = 'Confirm' }) {
+// Pass `onVerify(password)` for backend verification (async, throws on failure)
+// or `expectedPassword` for client-side comparison only.
+function PasswordPrompt({ open, title, description, expectedPassword, onVerify, onCancel, onConfirm, confirmLabel = 'Confirm' }) {
     const [pw, setPw] = useState('');
     const [err, setErr] = useState('');
     const [show, setShow] = useState(false);
+    const [busy, setBusy] = useState(false);
 
     useEffect(() => {
         if (!open) {
             setPw('');
             setErr('');
             setShow(false);
+            setBusy(false);
         }
     }, [open]);
 
     if (!open) return null;
 
-    function submit(e) {
+    async function submit(e) {
         e.preventDefault();
         if (!pw) {
             setErr('Please enter your password to continue.');
@@ -1615,7 +1645,18 @@ function PasswordPrompt({ open, title, description, expectedPassword, onCancel, 
             setErr('Incorrect password. Please try again.');
             return;
         }
-        onConfirm();
+        if (onVerify) {
+            try {
+                setBusy(true);
+                await onVerify(pw);
+            } catch (verifyErr) {
+                setErr(verifyErr.message || 'Verification failed.');
+                setBusy(false);
+                return;
+            }
+            setBusy(false);
+        }
+        onConfirm(pw);
     }
 
     return (
@@ -1651,8 +1692,10 @@ function PasswordPrompt({ open, title, description, expectedPassword, onCancel, 
                 </div>
                 {err && <p className="text-xs text-rose-500 -mt-2">{err}</p>}
                 <div className="flex justify-end gap-3 pt-1">
-                    <button type="button" onClick={onCancel} className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold">Cancel</button>
-                    <button type="submit" className="px-5 py-2 premium-gradient text-white rounded-xl text-sm font-bold">{confirmLabel}</button>
+                    <button type="button" onClick={onCancel} disabled={busy} className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold disabled:opacity-60">Cancel</button>
+                    <button type="submit" disabled={busy} className="px-5 py-2 premium-gradient text-white rounded-xl text-sm font-bold disabled:opacity-60">
+                        {busy ? 'Verifying...' : confirmLabel}
+                    </button>
                 </div>
             </form>
         </div>
@@ -1773,89 +1816,185 @@ function PatientDetailsForm({ open, mode = 'create', initial, onCancel, onSubmit
     );
 }
 
+// Modal for editing the logged-in user's account information.
+function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
+    const [form, setForm] = useState({ name: '', username: '', email: '', avatar: '' });
+    const avatarRef = useRef();
+
+    useEffect(() => {
+        if (!open) return;
+        setForm({
+            name: user?.name || '',
+            username: user?.username || '',
+            email: user?.email || `${user?.username || 'user'}@calisto.com`,
+            avatar: user?.avatar || ''
+        });
+    }, [open, user]);
+
+    if (!open) return null;
+
+    function update(field, value) {
+        setForm(prev => ({ ...prev, [field]: value }));
+    }
+
+    function handleAvatarFile(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+            showToast && showToast('Avatar must be JPG or PNG under 2 MB.');
+            e.target.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = evt => update('avatar', evt.target.result);
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    }
+
+    function submit(e) {
+        e.preventDefault();
+        if (!form.name.trim()) {
+            showToast && showToast('Display name cannot be empty.');
+            return;
+        }
+        if (!form.username.trim()) {
+            showToast && showToast('Username cannot be empty.');
+            return;
+        }
+        onSubmit({
+            name: form.name.trim(),
+            username: form.username.trim(),
+            email: form.email.trim(),
+            avatar: form.avatar
+        });
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onCancel}>
+            <form onMouseDown={e => e.stopPropagation()} onSubmit={submit} autoComplete="off" className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-8 space-y-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Account</p>
+                        <h3 className="text-xl font-bold text-[#1a1a1e] mt-1">Edit Account Information</h3>
+                        <p className="text-sm text-slate-500 mt-1">Update your sign-in identity. Changes are saved to this browser.</p>
+                    </div>
+                    <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-700 p-1" aria-label="Close">
+                        <i className="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <div className="flex items-center gap-5 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                    <div className="w-20 h-20 rounded-2xl bg-white overflow-hidden flex items-center justify-center border border-slate-100">
+                        {form.avatar ? (
+                            <img src={form.avatar} className="w-full h-full object-cover" alt="Avatar" />
+                        ) : (
+                            <span className="text-2xl font-bold text-slate-400">{(form.name || 'U').charAt(0).toUpperCase()}</span>
+                        )}
+                    </div>
+                    <div className="flex-1">
+                        <input ref={avatarRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleAvatarFile} />
+                        <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => avatarRef.current?.click()} className="px-4 py-2 premium-gradient text-white rounded-xl text-xs font-bold">Update Avatar</button>
+                            {form.avatar && (
+                                <button type="button" onClick={() => update('avatar', '')} className="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold">Remove</button>
+                            )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest">JPG or PNG - max 2MB</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Display Name</label>
+                        <input
+                            type="text"
+                            value={form.name}
+                            onChange={e => update('name', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Username</label>
+                        <input
+                            type="text"
+                            value={form.username}
+                            onChange={e => update('username', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Work Email</label>
+                        <input
+                            type="email"
+                            value={form.email}
+                            onChange={e => update('email', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-1">
+                    <button type="button" onClick={onCancel} className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold">Cancel</button>
+                    <button type="submit" className="px-5 py-2 premium-gradient text-white rounded-xl text-sm font-bold">Save Account</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
 // Login/Register Screen (interactive)
 function AuthPage({ onAuth }) {
-    function authWithPassword(authedUser, password) {
-        onAuth({ ...authedUser, password });
-    }
     const [register, setRegister] = useState(false);
     const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "doctor" });
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+
     function handleChange(e) {
         setForm(f => ({ ...f, [e.target.name]: e.target.value }));
     }
+
     async function handleSubmit(e) {
         e.preventDefault();
         setError("");
-        if (register) {
-            if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.confirm.trim())
-                return setError("Please fill in all fields.");
-            if (form.password !== form.confirm)
-                return setError("Passwords don't match.");
-            if (form.password.length < 4)
-                return setError("Password too short.");
-
-            if (isBackendConfigured()) {
-                try {
-                    setLoading(true);
-                    const data = await apiRequest('/api/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            name: form.name,
-                            username: form.username,
-                            password: form.password,
-                            type: form.type
-                        })
-                    });
-                    authWithPassword(data.user || { username: form.username, type: form.type, name: form.name }, form.password);
-                } catch (err) {
-                    setError(err.message || "Registration failed.");
-                } finally {
-                    setLoading(false);
+        try {
+            setLoading(true);
+            if (register) {
+                if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.confirm.trim()) {
+                    setError("Please fill in all fields.");
+                    return;
                 }
-                return;
-            }
-
-            // mock: username must be unique
-            if (MOCK_USERS.find(u=>u.username===form.username))
-                return setError("Username taken.");
-            // Register user (simulated)
-            MOCK_USERS.push({
-                username: form.username,
-                password: form.password,
-                type: form.type,
-                name: form.name
-            });
-            authWithPassword({ username: form.username, type: form.type, name: form.name }, form.password);
-        } else {
-            if (isBackendConfigured()) {
-                try {
-                    setLoading(true);
-                    const data = await apiRequest('/api/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            username: form.username,
-                            password: form.password
-                        })
-                    });
-                    authWithPassword(data.user || data, form.password);
-                } catch (err) {
-                    setError(err.message || "Login failed.");
-                } finally {
-                    setLoading(false);
+                if (form.password !== form.confirm) {
+                    setError("Passwords don't match.");
+                    return;
                 }
-                return;
+                if (form.password.length < 4) {
+                    setError("Password too short.");
+                    return;
+                }
+                const data = await apiJson('/api/register', 'POST', {
+                    name: form.name,
+                    username: form.username,
+                    password: form.password,
+                    type: form.type
+                });
+                onAuth({ user: data.user, token: data.token, password: form.password });
+            } else {
+                const data = await apiJson('/api/login', 'POST', {
+                    username: form.username,
+                    password: form.password
+                });
+                onAuth({ user: data.user, token: data.token, password: form.password });
             }
-
-            const found = MOCK_USERS.find(
-                u=>u.username===form.username && u.password===form.password
-            );
-            if (!found) return setError("Invalid username or password.");
-            authWithPassword({ username: found.username, type: found.type, name: found.name }, form.password);
+        } catch (err) {
+            setError(err.message || (register ? "Registration failed." : "Login failed."));
+        } finally {
+            setLoading(false);
         }
     }
     return (
@@ -2383,15 +2522,34 @@ function RecordModal({ record, onClose }) {
     );
 }
 
+// Loading screen shown while we hydrate from the backend after a refresh.
+function BootSplash({ message = 'Connecting to OcuVision backend...' }) {
+    return (
+        <div className="auth-shell min-h-screen flex flex-col items-center justify-center gap-5 text-center px-6">
+            <div className="w-14 h-14 premium-gradient rounded-2xl flex items-center justify-center text-white shadow-lg">
+                <i className="fa-solid fa-eye text-2xl"></i>
+            </div>
+            <div className="space-y-2">
+                <p className="text-2xl font-bold text-[#1a1a1e] tracking-tight">OCUVISION</p>
+                <p className="text-sm text-slate-500 max-w-md">{message}</p>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Render free tier may take ~30s on cold start</p>
+            </div>
+            <div className="w-10 h-10 rounded-full border-4 border-slate-100 border-t-slate-900 animate-spin"></div>
+        </div>
+    );
+}
+
 // Main Application
 const App = () => {
-    // App-wide state
-    const [isAuthenticated, setAuthenticated] = useState(false);
+    // bootState: 'loading' | 'auth' | 'app'. We hydrate from the backend (using
+    // the persisted auth token) before rendering the main UI on every refresh.
+    const [bootState, setBootState] = useState(() => getAuthToken() ? 'loading' : 'auth');
+    const [bootMessage, setBootMessage] = useState('Restoring your session...');
+
     const [user, setUser] = useState(null);
-    const [userPassword, setUserPassword] = useState('');
+    const [records, setRecords] = useState([]);
     const [view, setView] = useState('dashboard');
     const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
-    const [records, setRecords] = useState(MOCK_RECORDS);
     const [lastScanResult, setLastScanResult] = useState(null);
 
     // Record panel modal
@@ -2400,42 +2558,109 @@ const App = () => {
     // Toast system
     const [ToastComponent, triggerToast] = useToast();
 
-    const onLogout = () => {
-        setAuthenticated(false);
+    // On mount, if we already have a saved token, hydrate the user and records.
+    useEffect(() => {
+        const token = getAuthToken();
+        if (!token) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const me = await apiRequest('/api/users/me');
+                if (cancelled) return;
+                setUser(me.user);
+                const rec = await apiRequest('/api/records');
+                if (cancelled) return;
+                setRecords(rec.records || []);
+                setBootState('app');
+            } catch (err) {
+                if (cancelled) return;
+                setAuthToken('');
+                setBootState('auth');
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    async function loadRecords() {
+        try {
+            const rec = await apiRequest('/api/records');
+            setRecords(rec.records || []);
+        } catch (err) {
+            triggerToast(err.message || 'Could not load records.');
+        }
+    }
+
+    async function handleAuth({ user: authedUser, token }) {
+        setAuthToken(token || '');
+        setUser(authedUser);
+        setBootMessage('Loading patient registry...');
+        try {
+            const rec = await apiRequest('/api/records');
+            setRecords(rec.records || []);
+        } catch (err) {
+            triggerToast(err.message || 'Could not load records.');
+        }
+        setBootState('app');
+        triggerToast('Welcome, ' + (authedUser?.name || authedUser?.username || 'user') + '!');
+    }
+
+    async function onLogout() {
+        try {
+            await apiRequest('/api/logout', { method: 'POST' });
+        } catch (err) {
+            // Silent — even if the server can't be reached we still clear locally.
+        }
+        setAuthToken('');
         setUser(null);
-        setUserPassword('');
+        setRecords([]);
         setView('dashboard');
+        setBootState('auth');
         triggerToast("You have been logged out.");
-    };
-
-    function handleAuth(u) {
-        const { password, ...safeUser } = u || {};
-        setAuthenticated(true);
-        setUser(safeUser);
-        setUserPassword(password || '');
-        triggerToast('Welcome, ' + (safeUser.name || safeUser.username || 'user') + '!');
     }
 
-    function handleUpdateUser(patch) {
-        setUser(prev => ({ ...(prev || {}), ...patch }));
+    async function handleUpdateUser(patch) {
+        try {
+            const data = await apiJson('/api/users/me', 'PATCH', patch);
+            setUser(data.user);
+        } catch (err) {
+            triggerToast(err.message || 'Could not update account.');
+            throw err;
+        }
     }
 
-    function handleChangePassword(next) {
-        setUserPassword(next);
+    async function handleChangePassword(currentPassword, newPassword) {
+        await apiJson('/api/users/me/password', 'POST', { currentPassword, newPassword });
     }
 
-    function addRecord(record) {
-        setRecords(prev => [record, ...prev]);
+    async function addRecord(record) {
+        try {
+            const data = await apiJson('/api/records', 'POST', record);
+            setRecords(prev => [data.record, ...prev]);
+            return data.record;
+        } catch (err) {
+            triggerToast(err.message || 'Could not save record.');
+            throw err;
+        }
     }
-    function updateRecord(record) {
-        setRecords(prev => prev.map(r => r.id === record.id ? { ...r, ...record } : r));
+
+    async function updateRecord(record, password) {
+        const data = await apiJson(`/api/records/${record.id}`, 'PATCH', { ...record, password });
+        setRecords(prev => prev.map(r => r.id === data.record.id ? data.record : r));
+        return data.record;
     }
-    function deleteRecord(id) {
+
+    async function deleteRecord(id, password) {
+        await apiJson(`/api/records/${id}`, 'DELETE', { password });
         setRecords(prev => prev.filter(r => r.id !== id));
     }
 
-    if (!isAuthenticated)
-        return <AuthPage onAuth={handleAuth} />;
+    async function verifyPassword(password) {
+        await apiJson('/api/auth/verify', 'POST', { password });
+        return true;
+    }
+
+    if (bootState === 'loading') return <BootSplash message={bootMessage} />;
+    if (bootState === 'auth' || !user) return <AuthPage onAuth={handleAuth} />;
 
     // For more interactive experience, pass in handlers for all key actions
     return (
@@ -2486,7 +2711,7 @@ const App = () => {
                     onRecordClick={setModalRecord}
                     onUpdateRecord={updateRecord}
                     onDeleteRecord={deleteRecord}
-                    userPassword={userPassword}
+                    onVerifyPassword={verifyPassword}
                     showToast={triggerToast}
                   />
                 }
