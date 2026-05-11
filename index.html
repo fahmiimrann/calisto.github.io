@@ -240,6 +240,35 @@
                 page-break-before: always;
             }
 
+            /* Tailwind's md: / lg: responsive grid breakpoints don't fire
+               at A4 print width, so the report would otherwise collapse to a
+               single column. Force the layout to its on-screen shape here. */
+            body.ocu-printing .ocu-print-area .ocu-print-grid-2 {
+                display: grid !important;
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 0.9rem !important;
+            }
+            body.ocu-printing .ocu-print-area .ocu-print-grid-4 {
+                display: grid !important;
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+                gap: 0.6rem !important;
+            }
+            /* Tighten the inner padding so the report fills the printable
+               area instead of leaving a thick white frame. */
+            body.ocu-printing .ocu-print-area .ocu-print-body {
+                padding: 1.25rem 0.25rem !important;
+                gap: 1rem !important;
+            }
+            body.ocu-printing .ocu-print-area .ocu-print-header {
+                padding: 0 0 0.75rem 0 !important;
+                margin-bottom: 0.5rem !important;
+            }
+            /* Shrink the dark fundus panels a touch so all four fit on one
+               horizontal row at A4 portrait width. */
+            body.ocu-printing .ocu-print-area .ocu-print-grid-4 .aspect-square {
+                aspect-ratio: 1 / 1;
+            }
+
             /* Force Chrome / Edge to keep card backgrounds and the dark
                fundus panels visible in the PDF (they're stripped otherwise). */
             body.ocu-printing * {
@@ -2523,7 +2552,7 @@ function FundusImagePanel({ mode, src, cdr = 0.3 }) {
     return <img src={src} alt="Resized fundus" className="w-full h-full object-cover" />;
 }
 function FeatureGroup({ title, rows, columns = 1 }) {
-    const gridClass = columns === 2 ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2' : 'space-y-2';
+    const gridClass = columns === 2 ? 'grid grid-cols-1 sm:grid-cols-2 ocu-print-grid-2 gap-x-6 gap-y-2' : 'space-y-2';
     return (
         <div className="p-5 rounded-3xl border border-slate-100 bg-white">
             <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-4">{title}</p>
@@ -2587,8 +2616,8 @@ function RecordModal({ record, onClose }) {
                     </div>
                 </div>
 
-                <div className="p-8 space-y-8">
-                    <div className="ocu-print-section grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="ocu-print-body p-8 space-y-8">
+                    <div className="ocu-print-section ocu-print-grid-2 grid grid-cols-1 md:grid-cols-2 gap-5">
                         <ReportInfoCard label="Patient Information">
                             <ReportRow label="Name" value={record.patient} />
                             <ReportRow label="Age" value={`${record.age} yrs`} />
@@ -2623,7 +2652,7 @@ function RecordModal({ record, onClose }) {
                             <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Fundus Image Analysis</p>
                             <p className="text-[10px] text-slate-400">U-Net pipeline &middot; 512 &times; 512</p>
                         </div>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="ocu-print-grid-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
                             <FundusPanel title="Resized Fundus" subtitle="RGB original">
                                 {record.fundus_image
                                     ? <FundusImagePanel mode="original" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
@@ -2653,7 +2682,7 @@ function RecordModal({ record, onClose }) {
 
                     <div className="ocu-print-section">
                         <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-3">Extracted Features</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div className="ocu-print-grid-2 grid grid-cols-1 md:grid-cols-2 gap-5">
                             <FeatureGroup title="GLCM (Texture)" rows={[
                                 ['GLCM_Contrast',     fmt(features.GLCM_Contrast)],
                                 ['GLCM_Correlation',  fmt(features.GLCM_Correlation)],
