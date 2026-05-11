@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OcuVision AI | Premium Ophthalmic Intelligence</title>
-    
+
+    <link rel="icon" type="image/png" href="Calisto Logo.png">
+    <link rel="shortcut icon" type="image/png" href="Calisto Logo.png">
+    <link rel="apple-touch-icon" href="Calisto Logo.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -262,7 +266,6 @@ const MOCK_RECORDS = [
     { id: 'OCU-9923', patient: "Sarah Miller", age: 26, date: "2026-04-27", result: "Healthy", confidence: "98.8%", doctor: "Dr. Julian Voss", severity: "Healthy" },
     { id: 'OCU-1125', patient: "Aliyah Rahman", age: 59, date: "2026-04-26", result: "Diabetic Retinopathy", confidence: "82.0%", doctor: "Nurse Meera Syed", severity: "Critical" },
     { id: 'OCU-1126', patient: "Paul Garnier", age: 72, date: "2026-04-24", result: "AMD", confidence: "91.6%", doctor: "Dr. Julian Voss", severity: "Moderate" },
-    { id: 'OCU-1127', patient: "Noor Fatimah", age: 64, date: "2026-04-22", result: "Cataract", confidence: "93.1%", doctor: "Nurse Meera Syed", severity: "Moderate" },
     { id: 'OCU-1128', patient: "Tan Wei", age: 48, date: "2026-04-20", result: "Glaucoma", confidence: "90.8%", doctor: "Dr. Julian Voss", severity: "Critical" },
     { id: 'OCU-1129', patient: "Siti Aminah", age: 54, date: "2026-04-18", result: "Healthy", confidence: "98.1%", doctor: "Nurse Meera Syed", severity: "Healthy" }
 ];
@@ -824,7 +827,8 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
             result: diagnosisLabel,
             confidence: `${result.score}%`,
             doctor: details.doctor || currentDoctor || 'Unassigned',
-            severity: severityFromStatus
+            severity: severityFromStatus,
+            fundus_image: imgSrc || null
         };
         try {
             await onAddRecord(newRecord);
@@ -1023,7 +1027,7 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
     const [verifiedPassword, setVerifiedPassword] = useState('');
     const pageSize = 5;
     const severityRank = { Critical: 3, Moderate: 2, Healthy: 1 };
-    const diseases = ['All', 'Healthy', 'Diabetic Retinopathy', 'Glaucoma', 'AMD', 'Cataract'];
+    const diseases = ['All', 'Healthy', 'Diabetic Retinopathy', 'Glaucoma', 'AMD'];
     let visibleRecords = (records || []).filter(record => {
         const term = search.toLowerCase();
         const matchesSearch = !term || [record.patient, record.id, record.result, record.severity].some(value => String(value).toLowerCase().includes(term));
@@ -1170,10 +1174,10 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
 function Analytics({ showToast }) {
     const [range, setRange] = useState('7d');
     const data = range === '30d'
-        ? { cases: [48,19,14,11,8], trend: [54,74,62,78], labels: ['Wk 1','Wk 2','Wk 3','Wk 4'] }
-        : { cases: [55,16,12,8,9], trend: [12,15,18,25,30,17,16], labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] };
+        ? { cases: [56,19,14,11], trend: [54,74,62,78], labels: ['Wk 1','Wk 2','Wk 3','Wk 4'] }
+        : { cases: [64,16,12,8], trend: [12,15,18,25,30,17,16], labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] };
     const trendColors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#ef4444'];
-    const caseColors  = ['#10b981','#ef4444','#8b5cf6','#f59e0b','#06b6d4'];
+    const caseColors  = ['#10b981','#ef4444','#8b5cf6','#f59e0b'];
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-8">
@@ -1193,7 +1197,7 @@ function Analytics({ showToast }) {
                 <div className="calisto-card rounded-3xl p-8">
                     <h3 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-6">Case Distribution</h3>
                     <div className="space-y-4">
-                        {['Normal','DR','Glaucoma','AMD','Cataract'].map((label, i) => {
+                        {['Normal','DR','Glaucoma','AMD'].map((label, i) => {
                             const color = caseColors[i % caseColors.length];
                             return (
                                 <div key={label}>
@@ -1536,8 +1540,8 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                                 )}
                             </div>
 
-                            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4">
-                                Uploaded MATLAB files are stored and selectable here. To make the backend truly predict from MATLAB, the model still needs to be connected through MATLAB Runtime, MATLAB Production Server, or converted/exported to a Node-compatible format.
+                            <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                                <span className="font-bold">MATLAB-ready.</span> Upload a <code className="font-mono">.m</code> or <code className="font-mono">.mlx</code> file whose function name matches the filename and accepts a single image-path argument. It must return a struct with <code className="font-mono">diagnosis</code>, <code className="font-mono">score</code>, <code className="font-mono">severity</code>, and <code className="font-mono">notes</code>. The backend will invoke it via <code className="font-mono">matlab -batch</code> on every screening run. Make sure MATLAB is installed on the server and the <code className="font-mono">MATLAB_EXEC</code> environment variable points to its executable.
                             </p>
                         </div>
                         <div>
@@ -2170,19 +2174,6 @@ function generateFeatures(record) {
         f.Intensity_Skewness   = j(-0.30, 0.20);
         f.Vessel_GVD_pct       = j(9.4, 11.2);
         f.Vessel_Symmetry      = j(0.74, 0.86);
-    } else if (cond.includes('cataract')) {
-        f.GLCM_Contrast        = j(14, 22);
-        f.GLCM_Correlation     = j(0.96, 0.985);
-        f.GLCM_Energy          = j(0.20, 0.28);
-        f.GLCM_Homogeneity     = j(0.62, 0.74);
-        f.Intensity_Mean       = j(132, 156);
-        f.Intensity_StdDev     = j(28, 38);
-        f.Intensity_Entropy    = j(6.55, 6.95);
-        f.Intensity_Uniformity = j(0.0140, 0.0205);
-        f.Intensity_DynRange   = j(180, 220);
-        f.Vessel_GVD_pct       = j(7.4, 9.4);
-        f.Vessel_MaxLVD        = j(0.22, 0.28);
-        f.Vessel_Symmetry      = j(0.78, 0.90);
     }
 
     f.Intensity_Variance   = f.Intensity_StdDev * f.Intensity_StdDev;
@@ -2196,7 +2187,7 @@ function buildInterpretation(record, f) {
     const validation = cond.includes('healthy') ? 'Optional' : 'Recommended';
     const risk = cond.includes('healthy') ? 'Low'
                : cond.includes('early')   ? 'Moderate'
-               : cond.includes('cataract') || cond.includes('amd') ? 'Moderate'
+               : cond.includes('amd')     ? 'Moderate'
                : 'High';
     let summary, findings = [];
 
@@ -2240,14 +2231,6 @@ function buildInterpretation(record, f) {
             `Elevated intensity entropy of ${f.Intensity_Entropy.toFixed(2)} suggests heterogeneous macular reflectance.`,
             `Vessel symmetry of ${f.Vessel_Symmetry.toFixed(2)} remains within tolerance.`,
             `Recommend macular OCT and AREDS supplementation review.`,
-        ];
-    } else if (cond.includes('cataract')) {
-        summary = "Reduced contrast and compressed dynamic range indicate light scattering from lens opacity. Anterior segment evaluation recommended for cataract grading.";
-        findings = [
-            `GLCM contrast of ${f.GLCM_Contrast.toFixed(1)} is markedly reduced due to image haze.`,
-            `Dynamic range of ${f.Intensity_DynRange.toFixed(0)} reflects compressed grey-level distribution.`,
-            `Increased uniformity of ${f.Intensity_Uniformity.toFixed(4)} consistent with diffuse opacity.`,
-            `Slit-lamp examination and surgical evaluation recommended.`,
         ];
     } else {
         summary = "Diagnostic findings outside the standard categories. Manual review by an ophthalmologist is recommended.";
@@ -2310,7 +2293,6 @@ function FundusSVG({ mode = 'original', cdr = 0.3, condition = '', seed = 1 }) {
     }
 
     const claheClass = mode === 'clahe' ? 'grayscale contrast-150 brightness-90' : '';
-    const cataractHaze = cond.includes('cataract');
     const lesionFill = cond.includes('amd') ? '#f5da7e' : '#4a0606';
 
     return (
@@ -2334,9 +2316,6 @@ function FundusSVG({ mode = 'original', cdr = 0.3, condition = '', seed = 1 }) {
             {lesions.map((l, i) => (
                 <circle key={i} cx={l.cx} cy={l.cy} r={l.r} fill={lesionFill} opacity="0.92" />
             ))}
-            {cataractHaze && (
-                <rect width="100" height="100" fill="rgba(255,245,220,0.42)" />
-            )}
             {mode === 'onh' && (
                 <>
                     <ellipse cx={ox} cy={oy} rx={discRx} ry={discRy} fill="none" stroke="#65d873" strokeWidth="0.8" />
@@ -2366,11 +2345,61 @@ function ReportRow({ label, value, mono }) {
 function FundusPanel({ title, subtitle, children }) {
     return (
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
-            <div className="aspect-square rounded-xl overflow-hidden bg-black">{children}</div>
+            <div className="aspect-square rounded-xl overflow-hidden bg-black relative">{children}</div>
             <p className="text-[10px] uppercase tracking-widest text-slate-200 font-bold mt-3">{title}</p>
             {subtitle && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{subtitle}</p>}
         </div>
     );
+}
+
+// Real-image counterparts of the four fundus panels in the report.
+// When the patient record carries the original upload, we render it directly
+// (with CSS filters approximating CLAHE / vessel / ONH outputs) so the report
+// always reflects the same image the clinician uploaded in Diagnostics.
+function FundusImagePanel({ mode, src, cdr = 0.3 }) {
+    if (mode === 'vessel') {
+        return (
+            <div className="w-full h-full relative bg-black">
+                <img
+                    src={src}
+                    alt="Vessel segmentation overlay"
+                    className="w-full h-full object-cover"
+                    style={{
+                        filter: 'grayscale(1) contrast(2.6) brightness(0.85) invert(1)',
+                        mixBlendMode: 'screen'
+                    }}
+                />
+            </div>
+        );
+    }
+
+    if (mode === 'clahe') {
+        return (
+            <img
+                src={src}
+                alt="CLAHE-enhanced fundus"
+                className="w-full h-full object-cover"
+                style={{ filter: 'grayscale(1) contrast(1.55) brightness(0.92)' }}
+            />
+        );
+    }
+
+    if (mode === 'onh') {
+        const cupScale = Math.max(0.18, Math.min(0.94, cdr));
+        const discRx = 14, discRy = 16;
+        const cupRx = discRx * cupScale, cupRy = discRy * cupScale;
+        return (
+            <div className="relative w-full h-full">
+                <img src={src} alt="ONH segmentation" className="w-full h-full object-cover" />
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                    <ellipse cx="50" cy="50" rx={discRx} ry={discRy} fill="none" stroke="#65d873" strokeWidth="1.2" />
+                    <ellipse cx="50" cy="50" rx={cupRx} ry={cupRy} fill="none" stroke="#ff5050" strokeWidth="1" />
+                </svg>
+            </div>
+        );
+    }
+
+    return <img src={src} alt="Resized fundus" className="w-full h-full object-cover" />;
 }
 function FeatureGroup({ title, rows, columns = 1 }) {
     const gridClass = columns === 2 ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2' : 'space-y-2';
@@ -2459,16 +2488,24 @@ function RecordModal({ record, onClose }) {
                         </div>
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                             <FundusPanel title="Resized Fundus" subtitle="RGB original">
-                                <FundusSVG mode="original" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                                {record.fundus_image
+                                    ? <FundusImagePanel mode="original" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    : <FundusSVG mode="original" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                             <FundusPanel title="CLAHE Enhanced" subtitle="clip=0.005, tile=8x8">
-                                <FundusSVG mode="clahe" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                                {record.fundus_image
+                                    ? <FundusImagePanel mode="clahe" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    : <FundusSVG mode="clahe" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                             <FundusPanel title="Vessel Segmentation" subtitle={`GVD: ${features.Vessel_GVD_pct.toFixed(2)}%`}>
-                                <FundusSVG mode="vessel" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                                {record.fundus_image
+                                    ? <FundusImagePanel mode="vessel" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    : <FundusSVG mode="vessel" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                             <FundusPanel title="ONH Segmentation" subtitle={`CDR: ${features.ONH_CupToDiscRatio.toFixed(4)}`}>
-                                <FundusSVG mode="onh" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />
+                                {record.fundus_image
+                                    ? <FundusImagePanel mode="onh" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    : <FundusSVG mode="onh" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                         </div>
                         <div className="mt-3 flex items-center gap-5 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
