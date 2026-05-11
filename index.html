@@ -331,12 +331,34 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
-// Replace this with your Render backend URL after deployment.
-// Example: const API_BASE_URL = "https://ocuvision-backend.onrender.com";
-const API_BASE_URL = "https://ocuvision-backend.onrender.com";
+// Backend URL.
+//   * When the page is opened from localhost / 127.0.0.1 / file://, we assume the
+//     user is running `node server.js` on the same machine and call it directly
+//     (same-origin, no CORS). This is the ONLY way to reach a locally-installed
+//     MATLAB, since GitHub Pages and Render cannot host MATLAB themselves.
+//   * Otherwise we fall back to the hosted Render backend (demo mode only —
+//     no MATLAB on Render).
+const REMOTE_API_BASE_URL = "https://ocuvision-backend.onrender.com";
+
+function resolveApiBaseUrl() {
+    try {
+        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) || '';
+        const isLocal =
+            host === 'localhost' ||
+            host === '127.0.0.1' ||
+            host === '0.0.0.0' ||
+            host === '[::1]' ||
+            host.endsWith('.local');
+        if (isLocal) return '';
+    } catch (e) {}
+    return REMOTE_API_BASE_URL;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 const AUTH_TOKEN_KEY = 'ocuvision-auth-token';
 
 function isBackendConfigured() {
+    if (!API_BASE_URL) return true;
     return API_BASE_URL.trim() && !API_BASE_URL.includes("your-render-backend-name");
 }
 
