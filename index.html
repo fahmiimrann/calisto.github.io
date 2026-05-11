@@ -400,6 +400,9 @@ function normalizeAnalysisResult(data, fileName) {
         score: confidence,
         diagnosis: diagnosis.startsWith("Detection Result:") ? diagnosis : `Detection Result: ${diagnosis}`,
         notes: data.notes || data.recommendation || "AI backend analysis completed. Expert clinical validation is recommended.",
+        severity,
+        features: data.features && typeof data.features === 'object' ? data.features : null,
+        model: data.model || null,
         fileName
     };
 }
@@ -408,6 +411,22 @@ function formatFileSize(bytes = 0) {
     if (!bytes) return "Built-in";
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// --- Confidence Threshold (Settings → AI Core Configuration) -------------
+// Persisted in localStorage so the choice carries across sessions and is
+// read by Diagnostics to flag low-confidence AI predictions.
+const CONFIDENCE_THRESHOLD_KEY = 'ocu-confidence-threshold';
+const DEFAULT_CONFIDENCE_THRESHOLD = 85;
+function getConfidenceThreshold() {
+    try {
+        const stored = parseInt(localStorage.getItem(CONFIDENCE_THRESHOLD_KEY) || '', 10);
+        if (Number.isFinite(stored) && stored >= 50 && stored <= 99) return stored;
+    } catch (_) {}
+    return DEFAULT_CONFIDENCE_THRESHOLD;
+}
+function setConfidenceThreshold(value) {
+    try { localStorage.setItem(CONFIDENCE_THRESHOLD_KEY, String(value)); } catch (_) {}
 }
 
 // --- Mock Data ---
@@ -912,11 +931,38 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
                             });
                             finalResult = normalizeAnalysisResult(data, fileName);
                         } else {
-                            finalResult = [
-                                { status: 'Alert', score: '94.8', diagnosis: 'Detection Result: Diabetic Retinopathy', notes: 'Multiple microaneurysms and intraretinal hemorrhages detected. Expert validation recommended.' },
-                                { status: 'Warning', score: '89.3', diagnosis: 'Early Glaucoma indicators detected', notes: 'Cup-to-disc ratio and vessel morphology should be reviewed by an ophthalmologist.' },
-                                { status: 'Optimal', score: '98.7', diagnosis: 'No urgent retinal abnormality detected', notes: 'Fundus pattern is within baseline range for this simulated screening.' }
-                            ][Math.floor(Math.random() * 3)];
+                            const demoFeatures = {
+                                healthy: {
+                                    GLCM_Contrast: 34.5, GLCM_Correlation: 0.953, GLCM_Energy: 0.156, GLCM_Homogeneity: 0.552,
+                                    Intensity_Mean: 118.4, Intensity_StdDev: 52.0, Intensity_Skewness: 0.25, Intensity_Kurtosis: -0.81,
+                                    Intensity_Variance: 2704.00, Intensity_LogKurt: -0.211, Intensity_Smoothness: 0.99963,
+                                    Intensity_Entropy: 7.32, Intensity_Uniformity: 0.0078, Intensity_DynRange: 250,
+                                    Vessel_GVD_pct: 11.6, Vessel_MaxLVD: 0.31, Vessel_Symmetry: 0.93,
+                                    ONH_DiscArea_px2: 6800, ONH_CupToDiscRatio: 0.29
+                                },
+                                glaucoma: {
+                                    GLCM_Contrast: 42.6, GLCM_Correlation: 0.948, GLCM_Energy: 0.151, GLCM_Homogeneity: 0.547,
+                                    Intensity_Mean: 118.7, Intensity_StdDev: 51.4, Intensity_Skewness: 0.28, Intensity_Kurtosis: -0.78,
+                                    Intensity_Variance: 2641.96, Intensity_LogKurt: -0.248, Intensity_Smoothness: 0.99962,
+                                    Intensity_Entropy: 7.31, Intensity_Uniformity: 0.0079, Intensity_DynRange: 249,
+                                    Vessel_GVD_pct: 10.2, Vessel_MaxLVD: 0.31, Vessel_Symmetry: 0.91,
+                                    ONH_DiscArea_px2: 7400, ONH_CupToDiscRatio: 0.52
+                                },
+                                dr: {
+                                    GLCM_Contrast: 71.4, GLCM_Correlation: 0.886, GLCM_Energy: 0.108, GLCM_Homogeneity: 0.461,
+                                    Intensity_Mean: 122.5, Intensity_StdDev: 66.1, Intensity_Skewness: 0.83, Intensity_Kurtosis: 0.22,
+                                    Intensity_Variance: 4369.21, Intensity_LogKurt: -1.514, Intensity_Smoothness: 0.99977,
+                                    Intensity_Entropy: 7.61, Intensity_Uniformity: 0.0061, Intensity_DynRange: 252,
+                                    Vessel_GVD_pct: 9.5, Vessel_MaxLVD: 0.38, Vessel_Symmetry: 0.70,
+                                    ONH_DiscArea_px2: 6800, ONH_CupToDiscRatio: 0.34
+                                }
+                            };
+                            const demoChoices = [
+                                { status: 'Alert',   score: '94.8', diagnosis: 'Detection Result: Diabetic Retinopathy',          notes: 'Multiple microaneurysms and intraretinal hemorrhages detected. Expert validation recommended.', severity: 'Critical', features: demoFeatures.dr },
+                                { status: 'Warning', score: '89.3', diagnosis: 'Early Glaucoma indicators detected',              notes: 'Cup-to-disc ratio and vessel morphology should be reviewed by an ophthalmologist.',            severity: 'Moderate', features: demoFeatures.glaucoma },
+                                { status: 'Optimal', score: '98.7', diagnosis: 'No urgent retinal abnormality detected',          notes: 'Fundus pattern is within baseline range for this simulated screening.',                        severity: 'Healthy',  features: demoFeatures.healthy }
+                            ];
+                            finalResult = demoChoices[Math.floor(Math.random() * demoChoices.length)];
                             finalResult = { ...finalResult, fileName };
                         }
 
@@ -984,7 +1030,8 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
             confidence: `${result.score}%`,
             doctor: details.doctor || currentDoctor || 'Unassigned',
             severity: severityFromStatus,
-            fundus_image: imgSrc || null
+            fundus_image: imgSrc || null,
+            features: result.features || null
         };
         try {
             await onAddRecord(newRecord);
@@ -1053,7 +1100,11 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
                     <p className="text-slate-500 mt-2 animate-pulse">Pre-processing, CLAHE enhancement, and feature extraction in progress.</p>
                 </div>
             )}
-            {stage === 'results' && result && (
+            {stage === 'results' && result && (() => {
+                const threshold = getConfidenceThreshold();
+                const scoreNum = parseFloat(result.score);
+                const belowThreshold = Number.isFinite(scoreNum) && scoreNum < threshold;
+                return (
                 <div className="space-y-8">
                     <div className="flex items-center justify-between">
                         <div>
@@ -1067,13 +1118,28 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
                             </button>
                         </div>
                     </div>
+                    {belowThreshold && (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 flex items-start gap-4">
+                            <i className="fa-solid fa-triangle-exclamation text-rose-600 text-xl mt-0.5"></i>
+                            <div className="flex-1">
+                                <p className="font-bold text-rose-700">
+                                    AI confidence ({result.score}%) is below the {threshold}% threshold.
+                                </p>
+                                <p className="text-sm text-rose-700/90 mt-1">
+                                    Manual clinical review is recommended before finalizing this record. You can still save it, but consider re-scanning with better image quality or having an ophthalmologist verify the finding. Adjust the threshold in <span className="font-semibold">Settings → AI Core Configuration</span>.
+                                </p>
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <ResultPreview title="Original Fundus" src={imgSrc} />
                         <ResultPreview title="CLAHE Enhanced" src={imgSrc} filter="grayscale contrast-125" />
                         <VesselSegmentationPreview title="Vessel Segmentation" src={imgSrc} />
                         <div className="calisto-card rounded-2xl p-5">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Intensity Profile</p>
-                            {[68,85,34,72,91].map((val, i) => <IntensityBar key={i} label={['Mean','Deviation','Skewness','Smoothness','Entropy'][i]} val={val} />)}
+                            {intensityBarsFromFeatures(result.features).map((bar, i) => (
+                                <IntensityBar key={i} label={bar.label} val={bar.val} />
+                            ))}
                         </div>
                     </div>
                     <div className="calisto-card rounded-3xl p-8">
@@ -1090,13 +1156,14 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
                                     <MetricCard label="Confidence Score" value={`${result.score}%`} />
                                     <MetricCard label="Severity Level" value={result.status} />
-                                    <MetricCard label="Expert Validation" value={result.status === 'Optimal' ? 'Optional' : 'Required'} />
+                                    <MetricCard label="Expert Validation" value={belowThreshold || result.status !== 'Optimal' ? 'Required' : 'Optional'} />
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
             <PatientDetailsForm
                 open={showPatientForm}
                 mode="create"
@@ -1164,6 +1231,27 @@ function VesselSegmentationPreview({ title, src }) {
             </div>
         </div>
     );
+}
+
+// Normalise the AI model's intensity-statistic features into the 0–100 % bars
+// shown in the Screening Report's "Intensity Profile" card. If no features
+// were returned for some reason, falls back to neutral baseline values so the
+// UI never collapses.
+function intensityBarsFromFeatures(features) {
+    const clamp = v => Math.max(0, Math.min(100, Math.round(v)));
+    const f = features || {};
+    const mean       = Number.isFinite(f.Intensity_Mean)       ? f.Intensity_Mean       : 118;
+    const stddev     = Number.isFinite(f.Intensity_StdDev)     ? f.Intensity_StdDev     : 52;
+    const skewness   = Number.isFinite(f.Intensity_Skewness)   ? f.Intensity_Skewness   : 0.25;
+    const smoothness = Number.isFinite(f.Intensity_Smoothness) ? f.Intensity_Smoothness : 0.999;
+    const entropy    = Number.isFinite(f.Intensity_Entropy)    ? f.Intensity_Entropy    : 7.3;
+    return [
+        { label: 'Mean',       val: clamp(mean / 255 * 100) },
+        { label: 'Deviation',  val: clamp(stddev / 128 * 100) },
+        { label: 'Skewness',   val: clamp(Math.abs(skewness) / 2 * 100) },
+        { label: 'Smoothness', val: clamp(smoothness * 100) },
+        { label: 'Entropy',    val: clamp(entropy / 8 * 100) }
+    ];
 }
 
 function IntensityBar({ label, val }) {
@@ -1713,13 +1801,10 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                             </div>
 
                             <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                                <span className="font-bold">MATLAB-ready.</span> Upload a <code className="font-mono">.m</code> or <code className="font-mono">.mlx</code> file whose function name matches the filename and accepts a single image-path argument. It must return a struct with <code className="font-mono">diagnosis</code>, <code className="font-mono">score</code>, <code className="font-mono">severity</code>, and <code className="font-mono">notes</code>. The backend will invoke it via <code className="font-mono">matlab -batch</code> on every screening run. Make sure MATLAB is installed on the server and the <code className="font-mono">MATLAB_EXEC</code> environment variable points to its executable.
+                                <span className="font-bold">MATLAB-ready.</span> Upload a <code className="font-mono">.m</code> / <code className="font-mono">.mlx</code> function (filename = function name, takes an image path, returns a struct with <code className="font-mono">diagnosis, score, severity, notes</code>), OR a <code className="font-mono">.mat</code> Classification-Learner export (a struct with <code className="font-mono">predictFcn</code>). For <code className="font-mono">.mat</code> files the backend auto-extracts the OcuVision feature table from the uploaded image and calls <code className="font-mono">predictFcn</code> for you — so make sure your model was trained with column names matching the report's Extracted Features section (<code className="font-mono">GLCM_Contrast</code>, <code className="font-mono">Intensity_Mean</code>, <code className="font-mono">Vessel_GVD_pct</code>, <code className="font-mono">ONH_CupToDiscRatio</code>, etc.). MATLAB must be installed on the server and the <code className="font-mono">MATLAB_EXEC</code> environment variable must point to its executable.
                             </p>
                         </div>
-                        <div>
-                            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Confidence Threshold</label>
-                            <input type="range" min="50" max="99" defaultValue="85" className="w-full accent-slate-900 mt-3" />
-                        </div>
+                        <ConfidenceThresholdSetting showToast={showToast} />
                         <SettingToggle label="Enable Auto-Save Results" active />
                     </div>
                 )}
@@ -1789,6 +1874,55 @@ function SettingToggle({ label, active = false, onClick }) {
                 <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition ${current ? 'right-1' : 'left-1'}`}></span>
             </span>
         </button>
+    );
+}
+
+// Functional Confidence Threshold control.
+// The chosen value (50–99 %) is saved in localStorage. Diagnostics reads
+// it after each AI screening: if the model's confidence falls below this
+// number, the screening report shows a red "below threshold — manual
+// review required" banner so the clinician is prompted to verify the
+// result before saving it to the Patient Registry.
+function ConfidenceThresholdSetting({ showToast }) {
+    const [value, setValue] = useState(() => getConfidenceThreshold());
+
+    function handleChange(e) {
+        const v = parseInt(e.target.value, 10);
+        if (!Number.isFinite(v)) return;
+        setValue(v);
+        setConfidenceThreshold(v);
+    }
+
+    function handleCommit() {
+        if (showToast) showToast(`Confidence threshold set to ${value}%.`);
+    }
+
+    return (
+        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+            <div className="flex items-baseline justify-between gap-3">
+                <div>
+                    <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold block">Confidence Threshold</label>
+                    <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                        Minimum AI confidence required to accept a screening result without manual review. Predictions below this threshold are flagged in the Diagnostics report so the clinician verifies the finding before saving it to the Patient Registry.
+                    </p>
+                </div>
+                <span className="shrink-0 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-bold text-slate-800 font-mono">{value}%</span>
+            </div>
+            <input
+                type="range"
+                min="50"
+                max="99"
+                value={value}
+                onChange={handleChange}
+                onMouseUp={handleCommit}
+                onTouchEnd={handleCommit}
+                className="w-full accent-slate-900"
+            />
+            <div className="flex justify-between text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                <span>50% (lenient)</span>
+                <span>99% (strict)</span>
+            </div>
+        </div>
     );
 }
 // Reusable password verification modal — used before edit/delete in Patient Registry.
@@ -2591,7 +2725,16 @@ function FeatureGroup({ title, rows, columns = 1 }) {
 function RecordModal({ record, onClose }) {
     if (!record) return null;
     const seed = useMemo(() => hashRecordId(record.id), [record.id]);
-    const features = useMemo(() => generateFeatures(record), [record]);
+    // Prefer the features the AI model actually computed at screening time;
+    // only fall back to the deterministic generator for legacy seed records
+    // that were added before features were captured.
+    const features = useMemo(() => {
+        const baseline = generateFeatures(record);
+        if (record.features && typeof record.features === 'object') {
+            return { ...baseline, ...record.features };
+        }
+        return baseline;
+    }, [record]);
     const interp = useMemo(() => buildInterpretation(record, features), [record, features]);
 
     useEffect(() => {
