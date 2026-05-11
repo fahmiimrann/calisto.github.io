@@ -175,9 +175,14 @@
          *   4. Allow page breaks between major sections.
          * ------------------------------------------------------------------ */
         @media print {
+            /* Use a custom page size that's tall enough for the full
+               diagnostic report (header + 2 info cards + interpretation +
+               4 fundus panels + extracted features + intensity stats) to
+               fit on a SINGLE PDF page. Width matches A4 so the layout
+               still looks like a standard portrait report. */
             @page {
-                size: A4 portrait;
-                margin: 12mm 12mm 14mm 12mm;
+                size: 210mm 360mm;
+                margin: 10mm 12mm 10mm 12mm;
             }
 
             html, body {
@@ -229,44 +234,58 @@
                 border: 0 !important;
             }
 
-            /* Encourage clean page breaks between report sections without
-               splitting in the middle of a card. */
+            /* Single-page report: do NOT split sections across pages.
+               break-inside: avoid keeps each card intact. */
             body.ocu-printing .ocu-print-section {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
-            body.ocu-printing .ocu-print-page-break {
-                break-before: page;
-                page-break-before: always;
+            body.ocu-printing .ocu-print-area {
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
 
             /* Tailwind's md: / lg: responsive grid breakpoints don't fire
-               at A4 print width, so the report would otherwise collapse to a
+               at print width, so the report would otherwise collapse to a
                single column. Force the layout to its on-screen shape here. */
             body.ocu-printing .ocu-print-area .ocu-print-grid-2 {
                 display: grid !important;
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-                gap: 0.9rem !important;
+                gap: 0.7rem !important;
             }
             body.ocu-printing .ocu-print-area .ocu-print-grid-4 {
                 display: grid !important;
                 grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-                gap: 0.6rem !important;
+                gap: 0.5rem !important;
             }
-            /* Tighten the inner padding so the report fills the printable
-               area instead of leaving a thick white frame. */
+
+            /* Compact the print layout: trim outer padding, vertical gaps,
+               and per-card padding so the entire report fits comfortably
+               on the single 210mm × 360mm page defined above. */
             body.ocu-printing .ocu-print-area .ocu-print-body {
-                padding: 1.25rem 0.25rem !important;
-                gap: 1rem !important;
+                padding: 0.75rem 0.25rem !important;
+            }
+            body.ocu-printing .ocu-print-area .ocu-print-body > * + * {
+                margin-top: 0.75rem !important;
             }
             body.ocu-printing .ocu-print-area .ocu-print-header {
-                padding: 0 0 0.75rem 0 !important;
-                margin-bottom: 0.5rem !important;
+                padding: 0 0 0.6rem 0 !important;
+                margin-bottom: 0.25rem !important;
             }
-            /* Shrink the dark fundus panels a touch so all four fit on one
-               horizontal row at A4 portrait width. */
-            body.ocu-printing .ocu-print-area .ocu-print-grid-4 .aspect-square {
-                aspect-ratio: 1 / 1;
+            body.ocu-printing .ocu-print-area .ocu-print-header h2 {
+                font-size: 1.25rem !important;
+                line-height: 1.2 !important;
+            }
+            /* Tighter card padding in the info / interpretation / feature
+               cards (Tailwind p-5 / p-6 shrink to p-3). */
+            body.ocu-printing .ocu-print-area .p-6 { padding: 0.85rem !important; }
+            body.ocu-printing .ocu-print-area .p-5 { padding: 0.75rem !important; }
+            body.ocu-printing .ocu-print-area .p-3 { padding: 0.35rem !important; }
+            body.ocu-printing .ocu-print-area .px-8 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+            body.ocu-printing .ocu-print-area .py-5 { padding-top: 0.4rem !important; padding-bottom: 0.4rem !important; }
+            /* Slimmer fundus panel labels under each thumbnail. */
+            body.ocu-printing .ocu-print-area .ocu-print-grid-4 .mt-3 {
+                margin-top: 0.4rem !important;
             }
 
             /* Force Chrome / Edge to keep card backgrounds and the dark
