@@ -161,6 +161,92 @@
           from { opacity: 0; transform: translateY(10px);}
           to { opacity: 1; transform: translateY(0);}
         }
+
+        /* ------------------------------------------------------------------
+         * PRINT / "Download PDF" styles for the Diagnostic Report modal.
+         * When the user clicks "Print Report" we add `ocu-printing` to <body>
+         * just before calling window.print(). These rules then:
+         *   1. Hide every other page element (sidebar, header, toast, …)
+         *      via visibility, so only the report subtree paints.
+         *   2. Strip the modal of its viewport-fitting constraints
+         *      (max-h-[92vh], overflow-y-auto, sticky header/footer) so the
+         *      entire report flows naturally across A4 pages.
+         *   3. Hide the close X button and the bottom action bar.
+         *   4. Allow page breaks between major sections.
+         * ------------------------------------------------------------------ */
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 12mm 12mm 14mm 12mm;
+            }
+
+            html, body {
+                background: #ffffff !important;
+                color: #1a1a1e !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+            }
+            body::before, body::after { display: none !important; }
+            .video-backdrop, .video-overlay { display: none !important; }
+
+            body.ocu-printing * { visibility: hidden !important; }
+            body.ocu-printing .ocu-print-area,
+            body.ocu-printing .ocu-print-area * {
+                visibility: visible !important;
+            }
+            body.ocu-printing .ocu-print-area .ocu-no-print,
+            body.ocu-printing .ocu-print-area .ocu-no-print * {
+                visibility: hidden !important;
+                display: none !important;
+            }
+
+            /* Detach the modal from its fixed-position backdrop and make it
+               flow at full page width with no scroll constraints. */
+            body.ocu-printing .ocu-print-backdrop {
+                position: static !important;
+                inset: auto !important;
+                background: #ffffff !important;
+                backdrop-filter: none !important;
+                padding: 0 !important;
+                display: block !important;
+                z-index: auto !important;
+            }
+            body.ocu-printing .ocu-print-area {
+                position: static !important;
+                max-width: 100% !important;
+                max-height: none !important;
+                width: 100% !important;
+                overflow: visible !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+                background: #ffffff !important;
+            }
+            body.ocu-printing .ocu-print-area .ocu-print-header,
+            body.ocu-printing .ocu-print-area .ocu-print-footer {
+                position: static !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                border: 0 !important;
+            }
+
+            /* Encourage clean page breaks between report sections without
+               splitting in the middle of a card. */
+            body.ocu-printing .ocu-print-section {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            body.ocu-printing .ocu-print-page-break {
+                break-before: page;
+                page-break-before: always;
+            }
+
+            /* Force Chrome / Edge to keep card backgrounds and the dark
+               fundus panels visible in the PDF (they're stripped otherwise). */
+            body.ocu-printing * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -2466,12 +2552,28 @@ function RecordModal({ record, onClose }) {
         return () => document.removeEventListener('keydown', onEsc);
     }, [onClose]);
 
+    // Toggle the global `ocu-printing` class around window.print() so the
+    // dedicated @media print rules can isolate the report from the rest of
+    // the dashboard and let the entire (scrollable) modal flow across pages.
+    function handlePrintReport() {
+        if (typeof window === 'undefined' || !window.print) return;
+        document.body.classList.add('ocu-printing');
+        const cleanup = () => {
+            document.body.classList.remove('ocu-printing');
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        // Fallback for browsers that don't fire afterprint reliably.
+        setTimeout(() => document.body.classList.remove('ocu-printing'), 5000);
+        try { window.print(); } catch (_) { cleanup(); }
+    }
+
     const fmt = v => Number.isFinite(v) ? v.toFixed(6) : String(v);
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onClose}>
-            <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl" onMouseDown={e => e.stopPropagation()}>
-                <div className="sticky top-0 bg-white/95 backdrop-blur z-10 flex items-start justify-between px-8 py-5 border-b border-slate-100">
+        <div className="ocu-print-backdrop fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onClose}>
+            <div className="ocu-print-area bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl" onMouseDown={e => e.stopPropagation()}>
+                <div className="ocu-print-header sticky top-0 bg-white/95 backdrop-blur z-10 flex items-start justify-between px-8 py-5 border-b border-slate-100">
                     <div>
                         <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Diagnostic Report</p>
                         <h2 className="text-2xl font-bold text-[#1a1a1e] mt-1">{record.patient}</h2>
@@ -2479,14 +2581,14 @@ function RecordModal({ record, onClose }) {
                     </div>
                     <div className="flex items-center gap-3">
                         <StatusPill result={record.result} />
-                        <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-2" aria-label="Close">
+                        <button onClick={onClose} className="ocu-no-print text-slate-400 hover:text-slate-700 p-2" aria-label="Close">
                             <i className="fa-solid fa-xmark text-lg"></i>
                         </button>
                     </div>
                 </div>
 
                 <div className="p-8 space-y-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="ocu-print-section grid grid-cols-1 md:grid-cols-2 gap-5">
                         <ReportInfoCard label="Patient Information">
                             <ReportRow label="Name" value={record.patient} />
                             <ReportRow label="Age" value={`${record.age} yrs`} />
@@ -2503,7 +2605,7 @@ function RecordModal({ record, onClose }) {
                         </ReportInfoCard>
                     </div>
 
-                    <div className="p-6 rounded-3xl border border-slate-100 bg-slate-50">
+                    <div className="ocu-print-section p-6 rounded-3xl border border-slate-100 bg-slate-50">
                         <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-2">Clinical Interpretation</p>
                         <p className="text-sm text-slate-700 leading-relaxed">{interp.summary}</p>
                         <ul className="mt-4 space-y-1.5">
@@ -2516,7 +2618,7 @@ function RecordModal({ record, onClose }) {
                         </ul>
                     </div>
 
-                    <div>
+                    <div className="ocu-print-section">
                         <div className="flex items-baseline justify-between mb-3">
                             <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Fundus Image Analysis</p>
                             <p className="text-[10px] text-slate-400">U-Net pipeline &middot; 512 &times; 512</p>
@@ -2549,7 +2651,7 @@ function RecordModal({ record, onClose }) {
                         </div>
                     </div>
 
-                    <div>
+                    <div className="ocu-print-section">
                         <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-3">Extracted Features</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <FeatureGroup title="GLCM (Texture)" rows={[
@@ -2583,9 +2685,9 @@ function RecordModal({ record, onClose }) {
                     </div>
                 </div>
 
-                <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-100 flex justify-end gap-3 px-8 py-4">
+                <div className="ocu-print-footer ocu-no-print sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-100 flex justify-end gap-3 px-8 py-4">
                     <button onClick={onClose} className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm">Close</button>
-                    <button onClick={() => window.print && window.print()} className="px-5 py-2 premium-gradient text-white rounded-xl font-bold text-sm">
+                    <button onClick={handlePrintReport} className="px-5 py-2 premium-gradient text-white rounded-xl font-bold text-sm">
                         <i className="fa-solid fa-file-export mr-2"></i>Print Report
                     </button>
                 </div>
