@@ -170,6 +170,28 @@
     </video>
     <div class="video-overlay"></div>
 </div>
+<!-- Global SVG filters used by the fundus vessel-segmentation panels.
+     ocu-vessel-extract: grayscale + Laplacian edge detection + amplification,
+     producing a white-vessels-on-black look from any real fundus photograph. -->
+<svg width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+        <filter id="ocu-vessel-extract" color-interpolation-filters="sRGB" x="0%" y="0%" width="100%" height="100%">
+            <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0
+                                                 0.299 0.587 0.114 0 0
+                                                 0.299 0.587 0.114 0 0
+                                                 0     0     0     1 0"/>
+            <feConvolveMatrix order="3" preserveAlpha="true"
+                kernelMatrix=" 0 -1  0
+                              -1  4 -1
+                               0 -1  0"/>
+            <feComponentTransfer>
+                <feFuncR type="linear" slope="3"   intercept="-0.1"/>
+                <feFuncG type="linear" slope="3"   intercept="-0.1"/>
+                <feFuncB type="linear" slope="3"   intercept="-0.1"/>
+            </feComponentTransfer>
+        </filter>
+    </defs>
+</svg>
 <div id="root"></div>
 
 <script type="text/babel">
@@ -914,7 +936,7 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <ResultPreview title="Original Fundus" src={imgSrc} />
                         <ResultPreview title="CLAHE Enhanced" src={imgSrc} filter="grayscale contrast-125" />
-                        <ResultPreview title="Vessel Segmentation" src={imgSrc} filter="invert contrast-150" />
+                        <VesselSegmentationPreview title="Vessel Segmentation" src={imgSrc} />
                         <div className="calisto-card rounded-2xl p-5">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Intensity Profile</p>
                             {[68,85,34,72,91].map((val, i) => <IntensityBar key={i} label={['Mean','Deviation','Skewness','Smoothness','Entropy'][i]} val={val} />)}
@@ -989,6 +1011,22 @@ function ResultPreview({ title, src, filter = '' }) {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{title}</p>
             <div className="aspect-square rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100">
                 {src ? <img src={src} className={`w-full h-full object-cover ${filter}`} /> : <i className="fa-solid fa-image text-4xl text-slate-300"></i>}
+            </div>
+        </div>
+    );
+}
+
+// Dark-mode vessel-segmentation preview that mirrors the Patient Report's
+// "Vessel Segmentation" panel: the uploaded image is run through the global
+// SVG Laplacian-edge filter and shown as bright vessels on a black canvas.
+function VesselSegmentationPreview({ title, src }) {
+    return (
+        <div className="calisto-card rounded-2xl p-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{title}</p>
+            <div className="aspect-square rounded-xl overflow-hidden bg-black flex items-center justify-center border border-slate-800">
+                {src
+                    ? <img src={src} className="w-full h-full object-cover" style={{ filter: 'url(#ocu-vessel-extract)' }} />
+                    : <i className="fa-solid fa-image text-4xl text-slate-600"></i>}
             </div>
         </div>
     );
@@ -2364,10 +2402,7 @@ function FundusImagePanel({ mode, src, cdr = 0.3 }) {
                     src={src}
                     alt="Vessel segmentation overlay"
                     className="w-full h-full object-cover"
-                    style={{
-                        filter: 'grayscale(1) contrast(2.6) brightness(0.85) invert(1)',
-                        mixBlendMode: 'screen'
-                    }}
+                    style={{ filter: 'url(#ocu-vessel-extract)' }}
                 />
             </div>
         );
