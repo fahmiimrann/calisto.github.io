@@ -325,8 +325,8 @@ const Sidebar = ({ currentView, setView, onLogout, user }) => {
     return (
         <aside className="w-72 glass-sidebar h-screen fixed left-0 top-0 flex flex-col p-8 z-20">
             <div className="mb-12 flex items-center gap-3">
-                <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center text-white">
-                    <i className="fa-solid fa-eye text-lg"></i>
+                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-sm border border-slate-100">
+                    <img src="Calisto Logo.png" alt="Calisto" className="w-full h-full object-contain" />
                 </div>
                 <span className="text-xl font-bold tracking-tight text-[#1a1a1e] cursor-pointer" onClick={() => setView('dashboard')}>OCUVISION</span>
             </div>
@@ -2005,8 +2005,8 @@ function AuthPage({ onAuth }) {
         <div className="auth-shell min-h-screen flex items-center justify-center p-4">
             <form className="bg-white p-10 rounded-3xl calisto-card shadow-xl w-full max-w-md space-y-8" onSubmit={handleSubmit}>
                 <div className="flex flex-col items-center gap-2 mb-6">
-                    <div className="w-14 h-14 premium-gradient rounded-xl flex items-center justify-center text-white mb-2 text-xl shadow">
-                        <i className="fa-solid fa-eye"></i>
+                    <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center overflow-hidden mb-2 shadow border border-slate-100">
+                        <img src="Calisto Logo.png" alt="Calisto" className="w-full h-full object-contain" />
                     </div>
                     <span className="text-2xl font-bold tracking-tight text-[#1a1a1e]">OCUVISION</span>
                     <small className="text-slate-400 mt-0.5">{register ? "Register new account" : "Login to platform"}</small>
@@ -2563,8 +2563,8 @@ function RecordModal({ record, onClose }) {
 function BootSplash({ message = 'Connecting to OcuVision backend...' }) {
     return (
         <div className="auth-shell min-h-screen flex flex-col items-center justify-center gap-5 text-center px-6">
-            <div className="w-14 h-14 premium-gradient rounded-2xl flex items-center justify-center text-white shadow-lg">
-                <i className="fa-solid fa-eye text-2xl"></i>
+            <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center overflow-hidden shadow-lg border border-slate-100">
+                <img src="Calisto Logo.png" alt="Calisto" className="w-full h-full object-contain" />
             </div>
             <div className="space-y-2">
                 <p className="text-2xl font-bold text-[#1a1a1e] tracking-tight">OCUVISION</p>
