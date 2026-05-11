@@ -864,7 +864,7 @@ function VolumeBarDemo({ data }) {
     );
 }
 
-const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) => {
+const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoctor, showToast }) => {
     const [stage, setStage] = useState('connect');
     const [activeOption, setActiveOption] = useState(null);
     const [file, setFile] = useState(null);
@@ -887,6 +887,19 @@ const Diagnostics = ({ onResultSubmit, onAddRecord, currentDoctor, showToast }) 
             videoRef.current.srcObject = cameraStream;
         }
     }, [cameraStream, activeOption]);
+
+    // When the user navigates to another page, the Diagnostics component stays mounted
+    // (so the uploaded image, results, and progress are preserved). However we shut down
+    // the live webcam stream for privacy — the user can reopen the camera when they return.
+    useEffect(() => {
+        if (!isActive && cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            setCameraStream(null);
+            if (activeOption === 'webcam' && stage === 'connect') {
+                setActiveOption(null);
+            }
+        }
+    }, [isActive, cameraStream, activeOption, stage]);
 
     async function openCamera() {
         setActiveOption('webcam');
@@ -3047,8 +3060,10 @@ const App = () => {
                         </div>
                     </div>
                 </header>
-                {/* Main views */}
-                {view === 'dashboard' &&
+                {/* Main views — every page is rendered once and toggled with display:none
+                    so that state (uploaded fundus image, screening results, search filters,
+                    settings tabs, etc.) is preserved when the user navigates between pages. */}
+                <div style={{ display: view === 'dashboard' ? 'block' : 'none' }}>
                   <Dashboard
                     onExport={() => triggerToast("Report exported to PDF (demo).")}
                     onNewDiagnostic={() => {
@@ -3061,16 +3076,17 @@ const App = () => {
                     recordsDemo={records}
                     onRecordClick={setModalRecord}
                   />
-                }
-                {view === 'screening' &&
+                </div>
+                <div style={{ display: view === 'screening' ? 'block' : 'none' }}>
                   <Diagnostics
+                    isActive={view === 'screening'}
                     onResultSubmit={setLastScanResult}
                     onAddRecord={addRecord}
                     currentDoctor={user?.name || ''}
                     showToast={triggerToast}
                   />
-                }
-                {view === 'records' &&
+                </div>
+                <div style={{ display: view === 'records' ? 'block' : 'none' }}>
                   <PatientRegistry
                     records={records}
                     onRecordClick={setModalRecord}
@@ -3079,18 +3095,18 @@ const App = () => {
                     onVerifyPassword={verifyPassword}
                     showToast={triggerToast}
                   />
-                }
-                {view === 'analytics' &&
+                </div>
+                <div style={{ display: view === 'analytics' ? 'block' : 'none' }}>
                   <Analytics showToast={triggerToast} />
-                }
-                {view === 'settings' &&
+                </div>
+                <div style={{ display: view === 'settings' ? 'block' : 'none' }}>
                   <Settings
                     showToast={triggerToast}
                     user={user}
                     onUpdateUser={handleUpdateUser}
                     onChangePassword={handleChangePassword}
                   />
-                }
+                </div>
                 <ToastComponent />
                 {modalRecord && <RecordModal record={modalRecord} onClose={()=>setModalRecord(null)} />}
             </main>
