@@ -2924,6 +2924,11 @@ function RecordModal({ record, onClose }) {
 
 // Loading screen shown while we hydrate from the backend after a refresh.
 function BootSplash({ message = 'Connecting to OcuVision backend...' }) {
+    // The Render free tier sleeps after inactivity and takes ~30 s to wake up,
+    // so we warn about it — but only when we're actually talking to the hosted
+    // Render backend. When the page is loaded from localhost the local Node
+    // server responds instantly and the warning would be confusing.
+    const isRemoteBackend = Boolean(API_BASE_URL) && API_BASE_URL.includes('onrender.com');
     return (
         <div className="auth-shell min-h-screen flex flex-col items-center justify-center gap-5 text-center px-6">
             <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center overflow-hidden shadow-lg border border-slate-100">
@@ -2932,7 +2937,9 @@ function BootSplash({ message = 'Connecting to OcuVision backend...' }) {
             <div className="space-y-2">
                 <p className="text-2xl font-bold text-[#1a1a1e] tracking-tight">OCUVISION</p>
                 <p className="text-sm text-slate-500 max-w-md">{message}</p>
-                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Render free tier may take ~30s on cold start</p>
+                {isRemoteBackend && (
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Render free tier may take ~30s on cold start</p>
+                )}
             </div>
             <div className="w-10 h-10 rounded-full border-4 border-slate-100 border-t-slate-900 animate-spin"></div>
         </div>
