@@ -331,16 +331,38 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
-// Backend URL.
-//   * When the page is opened from localhost / 127.0.0.1 / file://, we assume the
-//     user is running `node server.js` on the same machine and call it directly
-//     (same-origin, no CORS). This is the ONLY way to reach a locally-installed
-//     MATLAB, since GitHub Pages and Render cannot host MATLAB themselves.
-//   * Otherwise we fall back to the hosted Render backend (demo mode only —
-//     no MATLAB on Render).
+// Backend URL resolution (priority order):
+//
+//   1. `localStorage.ocuvision-backend-url` — user-overridable at runtime via
+//      the browser console:
+//          localStorage.setItem('ocuvision-backend-url', 'https://my.tunnel.example.com');
+//          location.reload();
+//      Handy for ad-hoc Cloudflare quick-tunnels whose URL changes every time.
+//
+//   2. `TUNNEL_API_BASE_URL` below — set this to your stable Cloudflare Named
+//      Tunnel (or ngrok reserved domain) hostname to point GitHub Pages at
+//      your local Node + MATLAB server. Leave blank to skip this layer.
+//
+//   3. When the page is opened from localhost / 127.0.0.1, call the same-origin
+//      Node server directly (no CORS), which is how MATLAB is reached during
+//      local development.
+//
+//   4. Otherwise fall back to the hosted Render backend (demo mode only — no
+//      MATLAB on Render).
 const REMOTE_API_BASE_URL = "https://ocuvision-backend.onrender.com";
 
+// >>> Paste your Cloudflare Tunnel / ngrok URL here (no trailing slash) <<<
+// Example:
+//   const TUNNEL_API_BASE_URL = "https://ocuvision-fahmi.trycloudflare.com";
+const TUNNEL_API_BASE_URL = "";
+
 function resolveApiBaseUrl() {
+    try {
+        const override = (typeof localStorage !== 'undefined') &&
+            (localStorage.getItem('ocuvision-backend-url') || '').trim();
+        if (override) return override.replace(/\/$/, '');
+    } catch (e) {}
+
     try {
         const host = (typeof window !== 'undefined' && window.location && window.location.hostname) || '';
         const isLocal =
@@ -351,6 +373,8 @@ function resolveApiBaseUrl() {
             host.endsWith('.local');
         if (isLocal) return '';
     } catch (e) {}
+
+    if (TUNNEL_API_BASE_URL) return TUNNEL_API_BASE_URL.replace(/\/$/, '');
     return REMOTE_API_BASE_URL;
 }
 
@@ -415,7 +439,7 @@ function normalizeAnalysisResult(data, fileName) {
         "Optimal"
     );
     const confidence = String(data.confidence || data.score || "0").replace("%", "");
-    const diagnosis = data.diagnosis || data.result || "No urgent retinal abnormality detected";
+    const diagnosis = data.diagnosis || data.result || "Healthy";
 
     return {
         status,
@@ -458,13 +482,13 @@ const MOCK_USERS = [
     { username: "nurse", password: "nurs3", type: "nurse", name: "Nurse Meera Syed" }
 ];
 const MOCK_RECORDS = [
-    { id: 'OCU-9921', patient: "Elena Rodriguez", age: 37, date: "2026-04-29", result: "Healthy", confidence: "99.2%", doctor: "Dr. Julian Voss", severity: "Healthy" },
-    { id: 'OCU-9922', patient: "Marcus Chen", age: 41, date: "2026-04-28", result: "Early Glaucoma", confidence: "87.4%", doctor: "Dr. Julian Voss", severity: "Moderate" },
-    { id: 'OCU-9923', patient: "Sarah Miller", age: 26, date: "2026-04-27", result: "Healthy", confidence: "98.8%", doctor: "Dr. Julian Voss", severity: "Healthy" },
-    { id: 'OCU-1125', patient: "Aliyah Rahman", age: 59, date: "2026-04-26", result: "Diabetic Retinopathy", confidence: "82.0%", doctor: "Nurse Meera Syed", severity: "Critical" },
-    { id: 'OCU-1126', patient: "Paul Garnier", age: 72, date: "2026-04-24", result: "AMD", confidence: "91.6%", doctor: "Dr. Julian Voss", severity: "Moderate" },
-    { id: 'OCU-1128', patient: "Tan Wei", age: 48, date: "2026-04-20", result: "Glaucoma", confidence: "90.8%", doctor: "Dr. Julian Voss", severity: "Critical" },
-    { id: 'OCU-1129', patient: "Siti Aminah", age: 54, date: "2026-04-18", result: "Healthy", confidence: "98.1%", doctor: "Nurse Meera Syed", severity: "Healthy" }
+    { id: 'OCU-H00001',   patient: "Siti Aminah",     age: 54, date: "2026-04-18", result: "Healthy",              confidence: "98.1%", doctor: "Nurse Meera Syed", severity: "Healthy"  },
+    { id: 'OCU-G00001',   patient: "Tan Wei",         age: 48, date: "2026-04-20", result: "Glaucoma",             confidence: "90.8%", doctor: "Dr. Julian Voss",  severity: "Critical" },
+    { id: 'OCU-AMD00001', patient: "Paul Garnier",    age: 72, date: "2026-04-24", result: "AMD",                  confidence: "91.6%", doctor: "Dr. Julian Voss",  severity: "Moderate" },
+    { id: 'OCU-DR00001',  patient: "Aliyah Rahman",   age: 59, date: "2026-04-26", result: "Diabetic Retinopathy", confidence: "82.0%", doctor: "Nurse Meera Syed", severity: "Critical" },
+    { id: 'OCU-H00002',   patient: "Sarah Miller",    age: 26, date: "2026-04-27", result: "Healthy",              confidence: "98.8%", doctor: "Dr. Julian Voss",  severity: "Healthy"  },
+    { id: 'OCU-G00002',   patient: "Marcus Chen",     age: 41, date: "2026-04-28", result: "Early Glaucoma",       confidence: "87.4%", doctor: "Dr. Julian Voss",  severity: "Moderate" },
+    { id: 'OCU-H00003',   patient: "Elena Rodriguez", age: 37, date: "2026-04-29", result: "Healthy",              confidence: "99.2%", doctor: "Dr. Julian Voss",  severity: "Healthy"  }
 ];
 const MOCK_PATIENTS = [
     { id: "P-1001", name: "Elena Rodriguez", age: 37, gender: "Female", last_scan: "2023-10-24" },
@@ -897,8 +921,37 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     const [webcamError, setWebcamError] = useState('');
     const [device, setDevice] = useState('');
     const [showPatientForm, setShowPatientForm] = useState(false);
+    // Patient details are captured *before* the AI scan now (right after a fundus
+    // image is uploaded/captured). We stash them here so the scan can resume with
+    // them and auto-save the record once a diagnosis is available.
+    const [pendingDetails, setPendingDetails] = useState(null);
+    const [pendingCapture, setPendingCapture] = useState(null);
+    const [savedRecord, setSavedRecord] = useState(null);
+    const [availableModels, setAvailableModels] = useState([]);
+    const [selectedModelId, setSelectedModelId] = useState('');
+    const [modelsLoading, setModelsLoading] = useState(false);
     const fileInputRef = useRef();
     const videoRef = useRef();
+
+    // Load the model list so the per-scan picker can populate. We refresh
+    // every time the user navigates back to the Diagnostics page so any
+    // newly-uploaded MATLAB models appear without a reload.
+    useEffect(() => {
+        if (!isActive || !isBackendConfigured()) return;
+        let cancelled = false;
+        setModelsLoading(true);
+        apiRequest('/api/models', { method: 'GET' })
+            .then(data => {
+                if (cancelled) return;
+                const models = Array.isArray(data?.models) ? data.models : [];
+                setAvailableModels(models);
+                const active = models.find(m => m.active);
+                setSelectedModelId(prev => prev || data?.activeModel?.id || active?.id || models[0]?.id || '');
+            })
+            .catch(() => {})
+            .finally(() => { if (!cancelled) setModelsLoading(false); });
+        return () => { cancelled = true; };
+    }, [isActive]);
 
     useEffect(() => {
         return () => cameraStream?.getTracks().forEach(track => track.stop());
@@ -935,6 +988,17 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         }
     }
 
+    // After an image is captured/selected we no longer kick off the AI scan
+    // immediately — instead we stash the capture and open the Patient Details
+    // form. The actual scan starts when the user submits that form.
+    function queueCapture(source, label, imageFile = null) {
+        const fileName = label || imageFile?.name || 'screening-image.png';
+        setImgSrc(source || imgSrc);
+        setFile(imageFile || { name: fileName });
+        setPendingCapture({ source: source || imgSrc, label: fileName, imageFile: imageFile || null });
+        setShowPatientForm(true);
+    }
+
     async function startScan(source, label, imageFile = file) {
         setImgSrc(source || imgSrc);
         setFile(imageFile || file || { name: label || 'Captured image' });
@@ -952,13 +1016,14 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                         let finalResult;
 
                         if (isBackendConfigured()) {
-                            const uploadFile = imageFile || (source?.startsWith('data:') ? await dataUrlToFile(source, fileName) : null);
+                            const uploadFile = imageFile || (source && typeof source === 'string' && source.startsWith('data:') ? await dataUrlToFile(source, fileName) : null);
                             if (!uploadFile) {
                                 throw new Error('No image file is available to send to the backend.');
                             }
 
                             const formData = new FormData();
                             formData.append('image', uploadFile);
+                            if (selectedModelId) formData.append('modelId', selectedModelId);
 
                             const data = await apiRequest('/api/analyze', {
                                 method: 'POST',
@@ -995,7 +1060,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                             const demoChoices = [
                                 { status: 'Alert',   score: '94.8', diagnosis: 'Detection Result: Diabetic Retinopathy',          notes: 'Multiple microaneurysms and intraretinal hemorrhages detected. Expert validation recommended.', severity: 'Critical', features: demoFeatures.dr },
                                 { status: 'Warning', score: '89.3', diagnosis: 'Early Glaucoma indicators detected',              notes: 'Cup-to-disc ratio and vessel morphology should be reviewed by an ophthalmologist.',            severity: 'Moderate', features: demoFeatures.glaucoma },
-                                { status: 'Optimal', score: '98.7', diagnosis: 'No urgent retinal abnormality detected',          notes: 'Fundus pattern is within baseline range for this simulated screening.',                        severity: 'Healthy',  features: demoFeatures.healthy }
+                                { status: 'Optimal', score: '98.7', diagnosis: 'Healthy',                                         notes: 'Fundus pattern is within baseline range for this simulated screening.',                        severity: 'Healthy',  features: demoFeatures.healthy }
                             ];
                             finalResult = demoChoices[Math.floor(Math.random() * demoChoices.length)];
                             finalResult = { ...finalResult, fileName };
@@ -1004,6 +1069,19 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                     setResult(finalResult);
                     setStage('results');
                     onResultSubmit && onResultSubmit(finalResult);
+
+                    // Patient details were collected before the scan started, so
+                    // we can now auto-save the record with the AI-derived Record ID.
+                    if (pendingDetails) {
+                        try {
+                            const saved = await saveRecord(finalResult, pendingDetails);
+                            setSavedRecord(saved);
+                            setPendingDetails(null);
+                            showToast && showToast(`Record ${saved?.id || ''} added to Patient Registry.`);
+                        } catch (err) {
+                            showToast && showToast(err.message || 'Could not save patient record.');
+                        }
+                    }
                     } catch (err) {
                         setStage('connect');
                         showToast && showToast(err.message || 'Backend analysis failed.');
@@ -1024,20 +1102,21 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         cameraStream?.getTracks().forEach(track => track.stop());
         setCameraStream(null);
         showToast && showToast('Image captured from webcam.');
-        startScan(capture, 'webcam-capture.png');
+        queueCapture(capture, 'webcam-capture.png');
     }
 
     function handleFile(e) {
         const selected = e.target.files[0];
         if (!selected) return;
-        setFile(selected);
         const reader = new FileReader();
         reader.onload = evt => {
-            setImgSrc(evt.target.result);
             showToast && showToast('Image file loaded.');
-            startScan(evt.target.result, selected.name, selected);
+            queueCapture(evt.target.result, selected.name, selected);
         };
         reader.readAsDataURL(selected);
+        // Allow re-selecting the same file after a cancel (browsers suppress
+        // change events when the value is identical to the previous selection).
+        e.target.value = '';
     }
 
     function reset() {
@@ -1049,30 +1128,66 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         setProgress(0);
         setDevice('');
         setShowPatientForm(false);
+        setPendingDetails(null);
+        setPendingCapture(null);
+        setSavedRecord(null);
     }
 
-    async function handleAddPatient(details) {
-        if (!result) return;
+    function cancelPatientForm() {
+        // If we're cancelling the pre-scan details form, drop the pending capture
+        // so the user can pick a new input source. If the form is being shown for
+        // an already-scanned record (legacy path), just close it.
+        setShowPatientForm(false);
+        if (pendingCapture && !result) {
+            setPendingCapture(null);
+            setImgSrc(null);
+            setFile(null);
+        }
+    }
+
+    function handlePatientFormSubmit(details) {
+        // Pre-scan path: store the details, close the form, and start the scan.
+        // (We don't have a diagnosis yet — the record will be saved once the AI
+        // finishes, using the condition-based Record ID assigned by the server.)
+        if (pendingCapture && !result) {
+            setPendingDetails(details);
+            setShowPatientForm(false);
+            startScan(pendingCapture.source, pendingCapture.label, pendingCapture.imageFile);
+            return;
+        }
+        // Fallback path: legacy "Finalize & Record" button after the scan.
+        handleAddPatient(details);
+    }
+
+    // Builds the record payload + sends it to the backend. The server assigns
+    // a condition-based Record ID (OCU-H#####, OCU-AMD#####, OCU-DR#####,
+    // OCU-G#####) so we don't need to compute one client-side.
+    async function saveRecord(scanResult, details) {
         const today = new Date().toISOString().slice(0, 10);
-        const severityFromStatus = result.status === 'Alert' ? 'Critical' : result.status === 'Warning' ? 'Moderate' : 'Healthy';
-        const diagnosisLabel = (result.diagnosis || 'No urgent retinal abnormality detected').replace(/^Detection Result:\s*/i, '');
+        const severityFromStatus = scanResult.status === 'Alert' ? 'Critical' : scanResult.status === 'Warning' ? 'Moderate' : 'Healthy';
+        const diagnosisLabel = (scanResult.diagnosis || 'Healthy').replace(/^Detection Result:\s*/i, '');
         const newRecord = {
             patient: details.patient,
             age: details.age,
             gender: details.gender,
             date: today,
             result: diagnosisLabel,
-            confidence: `${result.score}%`,
+            confidence: `${scanResult.score}%`,
             doctor: details.doctor || currentDoctor || 'Unassigned',
             severity: severityFromStatus,
             fundus_image: imgSrc || null,
-            features: result.features || null
+            features: scanResult.features || null
         };
+        return await onAddRecord(newRecord);
+    }
+
+    async function handleAddPatient(details) {
+        if (!result) return;
         try {
-            await onAddRecord(newRecord);
+            const saved = await saveRecord(result, details);
+            setSavedRecord(saved);
             setShowPatientForm(false);
             showToast && showToast(`${details.patient} added to Patient Registry.`);
-            reset();
         } catch (err) {
             showToast && showToast(err.message || 'Could not save patient record.');
         }
@@ -1084,6 +1199,14 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                 <h1 className="text-3xl font-bold text-[#1a1a1e] tracking-tight">AI Screening Input</h1>
                 <p className="text-slate-500 mt-2">Choose webcam, connected camera, or upload just like the full OcuVision workflow.</p>
             </div>
+            {stage === 'connect' && (
+                <ModelPicker
+                    models={availableModels}
+                    selectedId={selectedModelId}
+                    onSelect={setSelectedModelId}
+                    loading={modelsLoading}
+                />
+            )}
             {stage === 'connect' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <InputOption active={activeOption === 'webcam'} color="blue" icon="fa-camera" title="Open Camera" text="Use the PC webcam to capture a live screening photo." onClick={openCamera}>
@@ -1106,7 +1229,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                                     <option>Fundus Camera</option>
                                     <option>External Camera</option>
                                 </select>
-                                <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); startScan('https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=800&auto=format&fit=crop', `${device || 'device'}-capture.jpg`); }}>
+                                <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); queueCapture('https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=800&auto=format&fit=crop', `${device || 'device'}-capture.jpg`); }}>
                                     <i className="fa-solid fa-bolt mr-2"></i>Capture Image
                                 </button>
                             </div>
@@ -1141,16 +1264,34 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                 const belowThreshold = Number.isFinite(scoreNum) && scoreNum < threshold;
                 return (
                 <div className="space-y-8">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
                         <div>
                             <h2 className="text-2xl font-bold">Screening Report</h2>
-                            <p className="text-slate-500 text-sm">ID: SCR-2026-LT99 - Date: {new Date().toLocaleDateString()}</p>
+                            <p className="text-slate-500 text-sm">
+                                {savedRecord ? `Record ID: ${savedRecord.id}` : 'Record ID: pending…'} - Date: {new Date().toLocaleDateString()}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                {savedRecord && (
+                                    <p className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
+                                        <i className="fa-solid fa-circle-check text-[10px]"></i>
+                                        Saved to Patient Registry
+                                    </p>
+                                )}
+                                {result.model?.name && (
+                                    <p className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-semibold">
+                                        <i className={`fa-solid ${engineIcon(result.model?.runtime)} text-[10px]`}></i>
+                                        {engineLabel(result.model?.runtime)} - {result.model.name}
+                                    </p>
+                                )}
+                            </div>
                         </div>
                         <div className="flex gap-3">
                             <button onClick={reset} className="px-5 py-2 bg-white border border-slate-200 rounded-lg font-bold text-sm">New Scan</button>
-                            <button onClick={() => setShowPatientForm(true)} className="px-5 py-2 premium-gradient text-white rounded-lg font-bold text-sm">
-                                <i className="fa-solid fa-user-plus mr-2"></i>Finalize & Record
-                            </button>
+                            {!savedRecord && (
+                                <button onClick={() => setShowPatientForm(true)} className="px-5 py-2 premium-gradient text-white rounded-lg font-bold text-sm">
+                                    <i className="fa-solid fa-user-plus mr-2"></i>Finalize & Record
+                                </button>
+                            )}
                         </div>
                     </div>
                     {belowThreshold && (
@@ -1203,12 +1344,81 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                 open={showPatientForm}
                 mode="create"
                 initial={{ doctor: currentDoctor || '' }}
-                onCancel={() => setShowPatientForm(false)}
-                onSubmit={handleAddPatient}
+                recordIdHint={savedRecord?.id || null}
+                onCancel={cancelPatientForm}
+                onSubmit={handlePatientFormSubmit}
             />
         </div>
     );
 };
+
+// Maps a backend "runtime" / model "type" string to a UI label + icon, so
+// the upload picker and the results header can show the user *which* AI
+// engine produced (or will produce) the diagnosis. Three families:
+//   matlab               - any MATLAB .mat / .m / .mlx upload
+//   python-tabular       - U-Net segmentation + sklearn classifier (Option B)
+//   python-cnn           - end-to-end ResNet50 (Option C)
+//   demo / anything else - built-in randomised demo response
+function engineLabel(runtime) {
+    const r = String(runtime || '').toLowerCase();
+    if (r === 'matlab' || r === 'mat' || r === 'm' || r === 'mlx') return 'MATLAB Engine';
+    if (r === 'python-tabular') return 'Python Engine (Tabular)';
+    if (r === 'python-cnn')     return 'Python Engine (CNN)';
+    return 'Demo Engine';
+}
+
+function engineIcon(runtime) {
+    const r = String(runtime || '').toLowerCase();
+    if (r === 'matlab' || r === 'mat' || r === 'm' || r === 'mlx') return 'fa-square-root-variable';
+    if (r === 'python-tabular') return 'fa-table-cells';
+    if (r === 'python-cnn')     return 'fa-microchip';
+    return 'fa-flask';
+}
+
+// Per-scan AI engine picker. Lives on the Diagnostics "connect" stage so
+// the user chooses the model *before* an image is captured/uploaded - the
+// chosen id flows into the /api/analyze form data as `modelId`.
+function ModelPicker({ models, selectedId, onSelect, loading }) {
+    const visible = Array.isArray(models) ? models : [];
+    const selected = visible.find(m => m.id === selectedId);
+    return (
+        <div className="calisto-card rounded-3xl p-6 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-700">
+                        <i className={`fa-solid ${engineIcon(selected?.type)} text-lg`}></i>
+                    </div>
+                    <div>
+                        <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Active AI Engine</p>
+                        <h3 className="text-lg font-bold mt-1">{selected?.name || 'No model selected'}</h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                            {selected ? engineLabel(selected.type) : 'Pick the AI engine that will analyse this scan.'}
+                            {selected?.originalName ? ` - ${selected.originalName}` : ''}
+                        </p>
+                    </div>
+                </div>
+                <div className="relative w-full md:w-72">
+                    <select
+                        value={selectedId}
+                        disabled={loading || !visible.length}
+                        onChange={e => onSelect(e.target.value)}
+                        className="w-full appearance-none px-4 py-3 pr-10 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 cursor-pointer disabled:opacity-60"
+                    >
+                        {!visible.length && (
+                            <option value="">{loading ? 'Loading models...' : 'No models available'}</option>
+                        )}
+                        {visible.map(m => (
+                            <option key={m.id} value={m.id}>
+                                {m.name}{m.active ? ' (Default)' : ''}
+                            </option>
+                        ))}
+                    </select>
+                    <i className="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 function InputOption({ active, color, icon, title, text, onClick, children }) {
     const colors = {
@@ -2047,8 +2257,11 @@ function PasswordPrompt({ open, title, description, expectedPassword, onVerify, 
     );
 }
 
-// Patient details form shown after a successful AI scan or when editing an existing record.
-function PatientDetailsForm({ open, mode = 'create', initial, onCancel, onSubmit }) {
+// Patient details form shown after a fundus image is captured/uploaded (before
+// scanning) or when editing an existing record. In create mode the Record ID is
+// auto-generated by the server based on the AI diagnosis, so we surface that
+// here as a read-only informational row.
+function PatientDetailsForm({ open, mode = 'create', initial, recordIdHint, onCancel, onSubmit }) {
     const [form, setForm] = useState({
         patient: '',
         age: '',
@@ -2086,7 +2299,14 @@ function PatientDetailsForm({ open, mode = 'create', initial, onCancel, onSubmit
     const heading = mode === 'edit' ? 'Edit Patient Record' : 'Patient Details';
     const description = mode === 'edit'
         ? 'Update the patient information for this record.'
-        : 'Enter the patient information before adding this scan to the Patient Registry.';
+        : 'Enter the patient information before running the AI scan. The Record ID will be auto-generated based on the AI diagnosis.';
+
+    // What to show for the Record ID display row. In edit mode (or once the
+    // record is saved) we show the actual ID; otherwise we show a placeholder
+    // explaining the OCU-H/AMD/DR/G naming scheme.
+    const recordIdDisplay = recordIdHint
+        ? recordIdHint
+        : 'Auto-generated after AI diagnosis';
 
     return (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onMouseDown={onCancel}>
@@ -2148,6 +2368,20 @@ function PatientDetailsForm({ open, mode = 'create', initial, onCancel, onSubmit
                             className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
                             autoComplete="off"
                         />
+                    </div>
+                    <div className="sm:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Record ID</label>
+                        <div className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm flex items-center justify-between gap-3">
+                            <span className={`font-mono ${recordIdHint ? 'text-[#1a1a1e]' : 'text-slate-400 italic'}`}>{recordIdDisplay}</span>
+                            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold whitespace-nowrap">
+                                <i className="fa-solid fa-wand-magic-sparkles mr-1"></i> Auto
+                            </span>
+                        </div>
+                        {!recordIdHint && (
+                            <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                                Healthy <span className="font-mono">OCU-H#####</span> &middot; AMD <span className="font-mono">OCU-AMD#####</span> &middot; DR <span className="font-mono">OCU-DR#####</span> &middot; Glaucoma <span className="font-mono">OCU-G#####</span>
+                            </p>
+                        )}
                     </div>
                 </div>
                 <div className="flex justify-end gap-3 pt-1">
@@ -2295,7 +2529,7 @@ function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
 // Login/Register Screen (interactive)
 function AuthPage({ onAuth }) {
     const [register, setRegister] = useState(false);
-    const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "doctor" });
+    const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "" });
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
@@ -2310,7 +2544,7 @@ function AuthPage({ onAuth }) {
         try {
             setLoading(true);
             if (register) {
-                if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.confirm.trim()) {
+                if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.confirm.trim() || !form.type.trim()) {
                     setError("Please fill in all fields.");
                     return;
                 }
@@ -2323,10 +2557,10 @@ function AuthPage({ onAuth }) {
                     return;
                 }
                 const data = await apiJson('/api/register', 'POST', {
-                    name: form.name,
-                    username: form.username,
+                    name: form.name.trim(),
+                    username: form.username.trim(),
                     password: form.password,
-                    type: form.type
+                    type: form.type.trim()
                 });
                 onAuth({ user: data.user, token: data.token, password: form.password });
             } else {
@@ -2414,12 +2648,10 @@ function AuthPage({ onAuth }) {
                                 )}
                             </button>
                         </div>
-                        <select name="type" value={form.type} onChange={handleChange}
-                                className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none">
-                            <option value="doctor">Doctor</option>
-                            <option value="nurse">Nurse</option>
-                            <option value="assistant">Assistant</option>
-                        </select>
+                        <input type="text" name="type" value={form.type} onChange={handleChange}
+                                placeholder="Title (e.g. Doctor, Nurse, Optometrist)"
+                                className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
+                        />
                         </>
                     )}
                 </div>
@@ -2432,7 +2664,7 @@ function AuthPage({ onAuth }) {
                     <button
                         type="button"
                         className="underline text-blue-500 hover:text-blue-700"
-                        onClick={() => { setRegister(r=>!r); setError(""); setForm({ username:"", password:"", confirm:"", name:"", type:"doctor" }); }}
+                        onClick={() => { setRegister(r=>!r); setError(""); setForm({ username:"", password:"", confirm:"", name:"", type:"" }); }}
                     >
                         {register ? "Login" : "Register"}
                     </button>
