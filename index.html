@@ -1134,11 +1134,10 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     }
 
     function cancelPatientForm() {
-        // If we're cancelling the pre-scan details form, drop the pending capture
-        // so the user can pick a new input source. If the form is being shown for
-        // an already-scanned record (legacy path), just close it.
+        // Cancelling the pre-scan details form drops the pending capture so the
+        // user can pick a new input source.
         setShowPatientForm(false);
-        if (pendingCapture && !result) {
+        if (pendingCapture) {
             setPendingCapture(null);
             setImgSrc(null);
             setFile(null);
@@ -1146,17 +1145,14 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     }
 
     function handlePatientFormSubmit(details) {
-        // Pre-scan path: store the details, close the form, and start the scan.
-        // (We don't have a diagnosis yet — the record will be saved once the AI
-        // finishes, using the condition-based Record ID assigned by the server.)
-        if (pendingCapture && !result) {
-            setPendingDetails(details);
-            setShowPatientForm(false);
-            startScan(pendingCapture.source, pendingCapture.label, pendingCapture.imageFile);
-            return;
-        }
-        // Fallback path: legacy "Finalize & Record" button after the scan.
-        handleAddPatient(details);
+        // Patient details are always collected pre-scan: stash them, close the
+        // form, and kick off the scan. The record will be auto-saved once the
+        // AI finishes, using the condition-based Record ID assigned by the
+        // server.
+        if (!pendingCapture) return;
+        setPendingDetails(details);
+        setShowPatientForm(false);
+        startScan(pendingCapture.source, pendingCapture.label, pendingCapture.imageFile);
     }
 
     // Builds the record payload + sends it to the backend. The server assigns
@@ -1179,18 +1175,6 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
             features: scanResult.features || null
         };
         return await onAddRecord(newRecord);
-    }
-
-    async function handleAddPatient(details) {
-        if (!result) return;
-        try {
-            const saved = await saveRecord(result, details);
-            setSavedRecord(saved);
-            setShowPatientForm(false);
-            showToast && showToast(`${details.patient} added to Patient Registry.`);
-        } catch (err) {
-            showToast && showToast(err.message || 'Could not save patient record.');
-        }
     }
 
     return (
@@ -1287,11 +1271,6 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                         </div>
                         <div className="flex gap-3">
                             <button onClick={reset} className="px-5 py-2 bg-white border border-slate-200 rounded-lg font-bold text-sm">New Scan</button>
-                            {!savedRecord && (
-                                <button onClick={() => setShowPatientForm(true)} className="px-5 py-2 premium-gradient text-white rounded-lg font-bold text-sm">
-                                    <i className="fa-solid fa-user-plus mr-2"></i>Finalize & Record
-                                </button>
-                            )}
                         </div>
                     </div>
                     {belowThreshold && (
