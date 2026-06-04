@@ -162,6 +162,24 @@
           to { opacity: 1; transform: translateY(0);}
         }
 
+        /* Slow blink animation for the AI Diagnostic Pipeline loader
+           (OpticalLoader). The 4.5 s cycle (period between blinks) is
+           unchanged; we just stretch the close+open motion itself so the
+           eyelid moves more languidly:
+             0%   -> 82% : fully open
+             82%  -> 91% : eyelid closing  (~405 ms)
+             91%  -> 100%: eyelid reopening (~405 ms)
+           ease-in-out keeps the motion organic rather than mechanical. */
+        @keyframes ocu-blink {
+          0%, 82%, 100% { transform: scaleY(1); }
+          91%           { transform: scaleY(0.06); }
+        }
+        .ocu-blink-eye {
+          animation: ocu-blink 4.5s ease-in-out infinite;
+          transform-origin: center center;
+          will-change: transform;
+        }
+
         /* ------------------------------------------------------------------
          * PRINT / "Download PDF" styles for the Diagnostic Report modal.
          * When the user clicks "Print Report" we add `ocu-printing` to <body>
@@ -305,23 +323,43 @@
     <div class="video-overlay"></div>
 </div>
 <!-- Global SVG filters used by the fundus vessel-segmentation panels.
-     ocu-vessel-extract: grayscale + Laplacian edge detection + amplification,
-     producing a white-vessels-on-black look from any real fundus photograph. -->
+     `ocu-vessel-extract` is the *fallback* used only when the MATLAB
+     pipeline did not ship back a real vessel mask (demo records / legacy
+     scans). It uses a 5x5 Laplacian-of-Gaussian on the inverted green
+     channel — that highlights thin bright structures (vessels in inverted
+     green) without producing the wide blurred halo around the retina-to-
+     corner boundary that a Gaussian top-hat would. Alpha is forced back to
+     1 because feConvolveMatrix preserves alpha but later ops can null it. -->
 <svg width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
     <defs>
         <filter id="ocu-vessel-extract" color-interpolation-filters="sRGB" x="0%" y="0%" width="100%" height="100%">
-            <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0
-                                                 0.299 0.587 0.114 0 0
-                                                 0.299 0.587 0.114 0 0
-                                                 0     0     0     1 0"/>
-            <feConvolveMatrix order="3" preserveAlpha="true"
-                kernelMatrix=" 0 -1  0
-                              -1  4 -1
-                               0 -1  0"/>
-            <feComponentTransfer>
-                <feFuncR type="linear" slope="3"   intercept="-0.1"/>
-                <feFuncG type="linear" slope="3"   intercept="-0.1"/>
-                <feFuncB type="linear" slope="3"   intercept="-0.1"/>
+            <!-- 1) Green channel only (highest vessel contrast on fundus images) -->
+            <feColorMatrix type="matrix" values="0 1 0 0 0
+                                                 0 1 0 0 0
+                                                 0 1 0 0 0
+                                                 0 0 0 1 0" result="green"/>
+            <!-- 2) Invert so dark vessels become bright structures -->
+            <feColorMatrix in="green" type="matrix" values="-1 0 0 0 1
+                                                            -1 0 0 0 1
+                                                            -1 0 0 0 1
+                                                             0 0 0 1 0" result="inverted"/>
+            <!-- 3) 5x5 Laplacian-of-Gaussian — fires on thin bright features,
+                 stays near zero on flat / smoothly-transitioning regions, so
+                 the retina-to-corner edge produces at most a one-pixel ring
+                 instead of a wide halo. -->
+            <feConvolveMatrix in="inverted" order="5" preserveAlpha="true"
+                kernelMatrix=" 0  0 -1  0  0
+                               0 -1 -2 -1  0
+                              -1 -2 16 -2 -1
+                               0 -1 -2 -1  0
+                               0  0 -1  0  0"
+                result="edges"/>
+            <!-- 4) Moderate amplification + opaque alpha -->
+            <feComponentTransfer in="edges">
+                <feFuncR type="linear" slope="2.5" intercept="0"/>
+                <feFuncG type="linear" slope="2.5" intercept="0"/>
+                <feFuncB type="linear" slope="2.5" intercept="0"/>
+                <feFuncA type="linear" slope="0"   intercept="1"/>
             </feComponentTransfer>
         </filter>
     </defs>
@@ -501,15 +539,188 @@ const MOCK_NOTIFICATIONS = [
     { id: 1, message: "Critical Alert: Diabetic Retinopathy found.", time: "5m" },
     { id: 2, message: "System: New version 4.3 deployed.", time: "2h" }
 ];
-const MOCK_SCREENING_VOLUME = [
-    { day: "Mon", scans: 24, color: "#3b82f6" },
-    { day: "Tue", scans: 41, color: "#10b981" },
-    { day: "Wed", scans: 32, color: "#f59e0b" },
-    { day: "Thu", scans: 58, color: "#8b5cf6" },
-    { day: "Fri", scans: 47, color: "#ec4899" },
-    { day: "Sat", scans: 36, color: "#06b6d4" },
-    { day: "Sun", scans: 52, color: "#ef4444" }
-];
+// Static colour palette for the daily-volume bar chart on Overview +
+// Insights. We cycle when the data has more bars than colours.
+const DAILY_BAR_COLORS = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#ef4444'];
+const WEEKDAY_LABELS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+// =========================================================================
+// Analytics derivations — single source of truth for Overview + Insights
+// =========================================================================
+// Every metric shown on either page is computed by one of the helpers
+// below. Components must NEVER recompute these inline; that way the two
+// pages can never drift out of sync.
+
+function _toYMD(input) {
+    if (!input) return '';
+    const dt = (input instanceof Date) ? input : new Date(input);
+    if (Number.isNaN(dt.getTime())) return '';
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+function todayYMD() { return _toYMD(new Date()); }
+
+// Map any free-form `result` string to one of the 4 UI buckets.
+// Anything that doesn't match DR / Glaucoma / AMD is treated as Normal.
+function classifyResultBucket(result = '') {
+    const r = String(result).toLowerCase();
+    if (r.includes('diabetic') || r.includes('retinopathy') || /\bdr\b/.test(r)) return 'DR';
+    if (r.includes('glaucoma'))                                                  return 'Glaucoma';
+    if (r.includes('amd') || r.includes('macular'))                              return 'AMD';
+    return 'Normal';
+}
+
+function getRecentRecords(records, days) {
+    if (!Array.isArray(records) || records.length === 0) return [];
+    if (!days || days === 'all') return records;
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (days - 1));
+    return records.filter(r => {
+        const d = new Date(r.date);
+        return !Number.isNaN(d.getTime()) && d >= cutoff;
+    });
+}
+
+function caseDistribution(records) {
+    const buckets = { Normal: 0, DR: 0, Glaucoma: 0, AMD: 0 };
+    for (const r of records) buckets[classifyResultBucket(r.result)]++;
+    const total = records.length || 1;
+    return ['Normal','DR','Glaucoma','AMD'].map(key => ({
+        label: key,
+        count: buckets[key],
+        pct:   Math.round(buckets[key] * 100 / total)
+    }));
+}
+
+function dailyVolume(records, days = 7) {
+    const series = [];
+    const counts = {};
+    for (let i = days - 1; i >= 0; i--) {
+        const dt = new Date();
+        dt.setHours(0, 0, 0, 0);
+        dt.setDate(dt.getDate() - i);
+        const key = _toYMD(dt);
+        const label = WEEKDAY_LABELS_SHORT[dt.getDay()];
+        counts[key] = 0;
+        series.push({ key, label });
+    }
+    for (const r of records) {
+        const k = _toYMD(r.date);
+        if (k in counts) counts[k]++;
+    }
+    return series.map(s => ({ ...s, count: counts[s.key] || 0 }));
+}
+
+function weeklyVolume(records, weeks = 4) {
+    const buckets = [];
+    for (let i = weeks - 1; i >= 0; i--) {
+        const end = new Date();
+        end.setHours(0, 0, 0, 0);
+        end.setDate(end.getDate() - i * 7);
+        const start = new Date(end);
+        start.setDate(start.getDate() - 6);
+        buckets.push({ label: `Wk ${weeks - i}`, start, end, count: 0 });
+    }
+    for (const r of records) {
+        const d = new Date(r.date);
+        if (Number.isNaN(d.getTime())) continue;
+        for (const b of buckets) {
+            if (d >= b.start && d <= b.end) { b.count++; break; }
+        }
+    }
+    return buckets.map(b => ({ label: b.label, count: b.count }));
+}
+
+// Ophthalmic-epidemiology age bins (20-year groups).
+function ageGroupBuckets(records) {
+    const bins = [
+        { label: '0-19',  min: 0,  max: 19,  count: 0 },
+        { label: '20-39', min: 20, max: 39,  count: 0 },
+        { label: '40-59', min: 40, max: 59,  count: 0 },
+        { label: '60-79', min: 60, max: 79,  count: 0 },
+        { label: '80+',   min: 80, max: 200, count: 0 }
+    ];
+    for (const r of records) {
+        const age = Number(r.age);
+        if (!Number.isFinite(age) || age < 0) continue;
+        for (const b of bins) {
+            if (age >= b.min && age <= b.max) { b.count++; break; }
+        }
+    }
+    return bins;
+}
+
+function ageGroupPeak(records) {
+    const bins = ageGroupBuckets(records);
+    let best = bins[0];
+    for (const b of bins) if (b.count > best.count) best = b;
+    return { peak: best, bins };
+}
+
+function isCriticalRecord(r) {
+    const sev = String(r?.severity || '').toLowerCase();
+    const res = String(r?.result   || '').toLowerCase();
+    if (sev === 'critical') return true;
+    if (res.includes('diabetic') || res.includes('retinopathy')) return true;
+    if (res.includes('glaucoma') && !res.includes('early')) return true;
+    return false;
+}
+
+function criticalCount(records) {
+    return records.filter(isCriticalRecord).length;
+}
+
+// Aggregate the Male / Female / Other counts across the supplied records,
+// returning percentages alongside raw counts so the pie chart can render
+// the slice arcs without redoing the math. "Other" lumps together any
+// gender value the registry produces that isn't a clean male/female
+// string ("Non-binary", missing, "Prefer not to say", …) so the chart
+// stays accurate without losing any patients.
+//
+// The registry stores patient details inline on every screening record,
+// so a single patient with 3 screenings appears as 3 rows with the same
+// name/age/gender. We deduplicate on a `${name}|${age}` key so the pie
+// chart counts UNIQUE PATIENTS rather than records — otherwise a busy
+// patient could single-handedly skew the demographic split, and the
+// "24 PATIENTS" label in the donut centre would be a lie (it would
+// really be "24 records").
+function genderDistribution(records) {
+    const buckets = { male: 0, female: 0, other: 0 };
+    const seen = new Set();
+    (records || []).forEach(r => {
+        const name = String(r.patient || '').trim().toLowerCase();
+        const age  = String(r.age ?? '').trim();
+        const key  = name ? `${name}|${age}` : `__row_${seen.size}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const g = String(r.gender || '').trim().toLowerCase();
+        if (g === 'male' || g === 'm') buckets.male += 1;
+        else if (g === 'female' || g === 'f') buckets.female += 1;
+        else if (g) buckets.other += 1;
+    });
+    const total = buckets.male + buckets.female + buckets.other;
+    const pct = n => total > 0 ? Math.round((n / total) * 100) : 0;
+    return {
+        total,
+        male:   { count: buckets.male,   pct: pct(buckets.male)   },
+        female: { count: buckets.female, pct: pct(buckets.female) },
+        other:  { count: buckets.other,  pct: pct(buckets.other)  },
+    };
+}
+
+function reviewedPerDay(records, days = 7) {
+    const series = dailyVolume(records, days);
+    const total  = series.reduce((s, o) => s + o.count, 0);
+    const todayCount = series.length ? series[series.length - 1].count : 0;
+    const avg = days > 0 ? total / days : 0;
+    return { todayCount, total, avg, series };
+}
+
+function todayScreeningCount(records) {
+    const today = todayYMD();
+    return (records || []).filter(r => _toYMD(r.date) === today).length;
+}
 
 function Toast({ message, onClose }) {
     useEffect(() => {
@@ -791,12 +1002,26 @@ function GlobalSearch({ records = MOCK_RECORDS, onPickRecord, setView }) {
     );
 }
 
-const Dashboard = ({ onExport, onNewDiagnostic, analysesToday, alerts, statsChartDemo, recordsDemo, onRecordClick }) => {
+const Dashboard = ({ onExport, onNewDiagnostic, statsChartDemo, recordsDemo, onRecordClick }) => {
+    // Every Overview metric is derived from the live records array via
+    // the analytics helpers at the top of this file. The Insights page
+    // uses the same helpers, so the two pages can never disagree.
+    const records = Array.isArray(recordsDemo) ? recordsDemo : [];
+    const todayCount     = useMemo(() => todayScreeningCount(records),  [records]);
+    const anomalyCount   = useMemo(() => records.filter(r => classifyResultBucket(r.result) !== 'Normal').length, [records]);
+    const reviewed7d     = useMemo(() => reviewedPerDay(records, 7),    [records]);
+    const volume7d       = useMemo(() => dailyVolume(records, 7),       [records]);
+    const volumeForChart = useMemo(() => volume7d.map((v, i) => ({
+        day:   v.label,
+        scans: v.count,
+        color: DAILY_BAR_COLORS[i % DAILY_BAR_COLORS.length]
+    })), [volume7d]);
+
     const stats = [
-        { label: 'Total Scans Today', value: analysesToday, change: '+12%', icon: 'fa-camera', color: 'text-blue-500' },
-        { label: 'Anomalies Detected', value: alerts, change: '-20%', icon: 'fa-triangle-exclamation', color: 'text-amber-500' },
-        { label: 'Pending Reviews', value: 7, change: '+3', icon: 'fa-clipboard-list', color: 'text-violet-500' },
-        { label: 'AI Accuracy Avg', value: '98.2%', change: '+0.4%', icon: 'fa-check-double', color: 'text-emerald-500' }
+        { label: 'Total Scans Today',  value: todayCount,            icon: 'fa-camera',                color: 'text-blue-500'    },
+        { label: 'Anomalies Detected', value: anomalyCount,          icon: 'fa-triangle-exclamation',  color: 'text-amber-500'   },
+        { label: 'Reviewed Today',     value: reviewed7d.todayCount, icon: 'fa-clipboard-list',        color: 'text-violet-500'  },
+        { label: 'AI Accuracy Avg',    value: '98.2%',               icon: 'fa-check-double',          color: 'text-emerald-500' }
     ];
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -824,7 +1049,6 @@ const Dashboard = ({ onExport, onNewDiagnostic, analysesToday, alerts, statsChar
                             <div className={`w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center ${stat.color}`}>
                                 <i className={`fa-solid ${stat.icon} text-lg`}></i>
                             </div>
-                            <span className={`text-xs font-bold px-2 py-1 rounded-full bg-slate-50 ${stat.change.startsWith('-') ? 'text-red-600' : 'text-emerald-600'}`}>{stat.change}</span>
                         </div>
                         <p className="text-slate-500 text-[11px] uppercase tracking-widest font-bold">{stat.label}</p>
                         <h3 className="text-3xl font-bold mt-2 text-[#1a1a1e]">{stat.value}</h3>
@@ -837,9 +1061,9 @@ const Dashboard = ({ onExport, onNewDiagnostic, analysesToday, alerts, statsChar
                         <h3 className="text-lg font-bold">Screening Volume</h3>
                         <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">7-day flow</span>
                     </div>
-                    <VolumeBarDemo data={MOCK_SCREENING_VOLUME} />
+                    <VolumeBarDemo data={volumeForChart} />
                     <div className="flex justify-between mt-4 text-xs font-bold text-slate-400 uppercase tracking-widest">
-                        {MOCK_SCREENING_VOLUME.map(item => <span key={item.day}>{item.day}</span>)}
+                        {volumeForChart.map((item, i) => <span key={`${item.day}-${i}`}>{item.day}</span>)}
                     </div>
                 </div>
                 <div className="calisto-card rounded-2xl p-8">
@@ -999,7 +1223,13 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         setShowPatientForm(true);
     }
 
-    async function startScan(source, label, imageFile = file) {
+    // `scanDetails` carries the patient form values explicitly so the auto-
+    // save guard below isn't trapped by React's stale-closure trap: if the
+    // form is submitted and immediately starts the scan, the `pendingDetails`
+    // state update is still queued, so reading it from this function's
+    // closure would yield `null`. Callers that already have the details in
+    // hand (handlePatientFormSubmit) pass them directly here.
+    async function startScan(source, label, imageFile = file, scanDetails = null) {
         setImgSrc(source || imgSrc);
         setFile(imageFile || file || { name: label || 'Captured image' });
         setStage('scanning');
@@ -1070,17 +1300,26 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                     setStage('results');
                     onResultSubmit && onResultSubmit(finalResult);
 
-                    // Patient details were collected before the scan started, so
-                    // we can now auto-save the record with the AI-derived Record ID.
-                    if (pendingDetails) {
+                    // Patient details were collected before the scan started,
+                    // so we can now auto-save the record with the AI-derived
+                    // Record ID. Prefer the explicit `scanDetails` parameter
+                    // over the closure-captured state, which can still be the
+                    // stale (null) value when the form-submit handler kicked
+                    // off the scan in the same tick.
+                    const detailsForSave = scanDetails || pendingDetails;
+                    if (detailsForSave) {
                         try {
-                            const saved = await saveRecord(finalResult, pendingDetails);
+                            const saved = await saveRecord(finalResult, detailsForSave);
                             setSavedRecord(saved);
                             setPendingDetails(null);
                             showToast && showToast(`Record ${saved?.id || ''} added to Patient Registry.`);
                         } catch (err) {
-                            showToast && showToast(err.message || 'Could not save patient record.');
+                            console.error('[ocuvision] auto-save to Patient Registry failed:', err);
+                            showToast && showToast(`Auto-save failed: ${err.message || 'unknown error'}`);
                         }
+                    } else {
+                        console.warn('[ocuvision] no patient details available; record was not auto-saved.');
+                        showToast && showToast('Scan complete, but patient details missing — record was not saved.');
                     }
                     } catch (err) {
                         setStage('connect');
@@ -1148,11 +1387,13 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         // Patient details are always collected pre-scan: stash them, close the
         // form, and kick off the scan. The record will be auto-saved once the
         // AI finishes, using the condition-based Record ID assigned by the
-        // server.
+        // server. We pass `details` as an explicit fourth argument so the
+        // auto-save check in startScan doesn't depend on the React state
+        // update committing before the nested setTimeout fires (it doesn't).
         if (!pendingCapture) return;
         setPendingDetails(details);
         setShowPatientForm(false);
-        startScan(pendingCapture.source, pendingCapture.label, pendingCapture.imageFile);
+        startScan(pendingCapture.source, pendingCapture.label, pendingCapture.imageFile, details);
     }
 
     // Builds the record payload + sends it to the backend. The server assigns
@@ -1233,11 +1474,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
             )}
             {stage === 'scanning' && (
                 <div className="calisto-card rounded-3xl p-12 text-center">
-                    <div className="relative w-44 h-44 mx-auto mb-8">
-                        <div className="absolute inset-0 rounded-full border-4 border-slate-100"></div>
-                        <div className="absolute inset-0 rounded-full border-4 border-t-[#1a1a1e] border-slate-200 animate-spin"></div>
-                        <div className="absolute inset-0 flex items-center justify-center text-3xl font-bold">{progress}%</div>
-                    </div>
+                    <OpticalLoader />
                     <h2 className="text-2xl font-bold">AI Diagnostic Pipeline</h2>
                     <p className="text-slate-500 mt-2 animate-pulse">Pre-processing, CLAHE enhancement, and feature extraction in progress.</p>
                 </div>
@@ -1289,13 +1526,18 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <ResultPreview title="Original Fundus" src={imgSrc} />
                         <ResultPreview title="CLAHE Enhanced" src={imgSrc} filter="grayscale contrast-125" />
-                        <VesselSegmentationPreview title="Vessel Segmentation" src={imgSrc} />
-                        <div className="calisto-card rounded-2xl p-5">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Intensity Profile</p>
-                            {intensityBarsFromFeatures(result.features).map((bar, i) => (
-                                <IntensityBar key={i} label={bar.label} val={bar.val} />
-                            ))}
-                        </div>
+                        <VesselSegmentationPreview title="Vessel Segmentation" src={imgSrc} maskB64={result.features?.Vessel_MaskPng} />
+                        {(() => {
+                            const profile = diseaseProfileBars(result.features, result.diagnosis);
+                            return (
+                                <div className="calisto-card rounded-2xl p-5">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">{profile.title}</p>
+                                    {profile.bars.map((bar, i) => (
+                                        <IntensityBar key={i} label={bar.label} val={bar.val} display={bar.display} abnormal={bar.abnormal} />
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
                     <div className="calisto-card rounded-3xl p-8">
                         <div className="flex flex-col lg:flex-row gap-8">
@@ -1422,19 +1664,130 @@ function InputOption({ active, color, icon, title, text, onClick, children }) {
 function StatusPill({ result }) {
     const text = result || 'Healthy';
     const lower = text.toLowerCase();
-    const cls = lower.includes('healthy') || lower.includes('optimal')
-        ? 'bg-emerald-50 text-emerald-600'
-        : lower.includes('alert') || lower.includes('retinopathy') || lower.includes('glaucoma')
-        ? 'bg-rose-50 text-rose-600'
-        : 'bg-amber-50 text-amber-600';
+    // Per-disease colour map. The three OcuVision diseases each get their
+    // own distinct shade of red so the registry list reads at a glance,
+    // while Healthy is the only green:
+    //
+    //   Healthy / Optimal              -> emerald (green)
+    //   Diabetic Retinopathy           -> rose    (pink-red, #e11d48)
+    //   Glaucoma                       -> red     (pure red,  #dc2626)
+    //   Age-related Macular Degen.     -> orange  (orange-red, #ea580c)
+    //   Warning / Moderate (status)    -> amber   (non-disease severity)
+    //   Alert / Critical (status)      -> rose    (matches DR family)
+    let cls;
+    if (lower.includes('healthy') || lower.includes('optimal')) {
+        cls = 'bg-emerald-50 text-emerald-600';
+    } else if (lower.includes('retinopathy') || lower.trim() === 'dr') {
+        cls = 'bg-rose-50 text-rose-600';
+    } else if (lower.includes('glaucoma')) {
+        cls = 'bg-red-50 text-red-600';
+    } else if (lower.includes('amd') || lower.includes('macular') || lower.includes('age-related')) {
+        cls = 'bg-orange-50 text-orange-600';
+    } else if (lower.includes('alert') || lower.includes('critical')) {
+        cls = 'bg-rose-50 text-rose-600';
+    } else if (lower.includes('warning') || lower.includes('moderate')) {
+        cls = 'bg-amber-50 text-amber-600';
+    } else {
+        cls = 'bg-slate-100 text-slate-600';
+    }
     return <span className={`text-[10px] uppercase tracking-widest font-bold px-3 py-1 rounded-full ${cls}`}>{text}</span>;
+}
+
+// Soft-edged blinking eye shown while the AI pipeline runs. No progress
+// percentage — the slow blink itself signals "the system is working".
+// The blink keyframes live in the top-of-file <style> block (ocu-blink),
+// timed so the eye stays open for ~4 s, closes for ~150 ms, and reopens.
+function OpticalLoader() {
+    const irisStreaks = useMemo(() => {
+        const lines = [];
+        for (let i = 0; i < 44; i++) {
+            const angle = (i * 360 / 44) * Math.PI / 180;
+            const x1 = 100 + 17 * Math.cos(angle);
+            const y1 = 60  + 17 * Math.sin(angle);
+            const x2 = 100 + 31 * Math.cos(angle);
+            const y2 = 60  + 31 * Math.sin(angle);
+            lines.push({ key: i, x1, y1, x2, y2 });
+        }
+        return lines;
+    }, []);
+    // Eye shape: smooth almond drawn with two cubic curves. Used both for
+    // clipping the iris/sclera and (with a soft stroke) as the outline.
+    const eyePath = 'M 18 60 C 50 5, 150 5, 182 60 C 150 115, 50 115, 18 60 Z';
+    return (
+        <div className="w-72 h-48 mx-auto mb-6 flex items-center justify-center">
+            <div className="ocu-blink-eye" style={{ transformOrigin: 'center center' }}>
+                <svg viewBox="0 0 200 120" className="w-72 h-44 drop-shadow-[0_8px_24px_rgba(15,23,42,0.18)]" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        {/* Sclera: warm white sphere with a slight cool falloff */}
+                        <radialGradient id="ocu-loader-sclera" cx="42%" cy="38%" r="65%">
+                            <stop offset="0%"   stopColor="#ffffff"/>
+                            <stop offset="55%"  stopColor="#f8fafc"/>
+                            <stop offset="90%"  stopColor="#e2e8f0"/>
+                            <stop offset="100%" stopColor="#94a3b8"/>
+                        </radialGradient>
+                        {/* Iris: monochrome slate gradient (colourless) */}
+                        <radialGradient id="ocu-loader-iris" cx="40%" cy="35%" r="55%">
+                            <stop offset="0%"   stopColor="#e2e8f0"/>
+                            <stop offset="35%"  stopColor="#94a3b8"/>
+                            <stop offset="70%"  stopColor="#475569"/>
+                            <stop offset="100%" stopColor="#1e293b"/>
+                        </radialGradient>
+                        {/* Pupil with a tiny vignette so it doesn't look flat */}
+                        <radialGradient id="ocu-loader-pupil" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%"   stopColor="#0b1220"/>
+                            <stop offset="100%" stopColor="#020617"/>
+                        </radialGradient>
+                        {/* Soften the eye outline so the edges feel organic */}
+                        <filter id="ocu-loader-soft" x="-4%" y="-4%" width="108%" height="108%">
+                            <feGaussianBlur stdDeviation="0.45"/>
+                        </filter>
+                        {/* Clip the sclera + iris + pupil to the almond eye shape */}
+                        <clipPath id="ocu-loader-eye-clip">
+                            <path d={eyePath}/>
+                        </clipPath>
+                    </defs>
+
+                    <g clipPath="url(#ocu-loader-eye-clip)">
+                        {/* Sclera */}
+                        <rect width="200" height="120" fill="url(#ocu-loader-sclera)"/>
+                        {/* Soft inner shadow at the eye edge */}
+                        <path d={eyePath} fill="none" stroke="rgba(71,85,105,0.35)"
+                              strokeWidth="3" filter="url(#ocu-loader-soft)"/>
+                        {/* Iris */}
+                        <circle cx="100" cy="60" r="32" fill="url(#ocu-loader-iris)"/>
+                        {/* Iris radial streaks (subtle, monochrome) */}
+                        <g opacity="0.5">
+                            {irisStreaks.map(s => (
+                                <line key={s.key} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                                      stroke="#cbd5e1" strokeWidth="0.5" strokeLinecap="round"/>
+                            ))}
+                        </g>
+                        {/* Limbal ring */}
+                        <circle cx="100" cy="60" r="32" fill="none"
+                                stroke="rgba(15,23,42,0.55)" strokeWidth="0.8"/>
+                        {/* Pupil */}
+                        <circle cx="100" cy="60" r="12" fill="url(#ocu-loader-pupil)"/>
+                        {/* Specular highlights (the wet glint) */}
+                        <ellipse cx="93" cy="53" rx="4.5" ry="3" fill="rgba(255,255,255,0.92)"/>
+                        <ellipse cx="106" cy="65" rx="1.6" ry="1.1" fill="rgba(255,255,255,0.6)"/>
+                    </g>
+
+                    {/* Outer eye outline (soft) */}
+                    <path d={eyePath} fill="none" stroke="#64748b" strokeWidth="1.5"
+                          strokeLinecap="round" filter="url(#ocu-loader-soft)"/>
+                </svg>
+            </div>
+        </div>
+    );
 }
 
 function ResultPreview({ title, src, filter = '' }) {
     return (
         <div className="calisto-card rounded-2xl p-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{title}</p>
-            <div className="aspect-square rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100">
+            {/* Circular viewport: matches the vessel-segmentation panel and
+                gives the four screening-report previews a consistent shape. */}
+            <div className="aspect-square rounded-full overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100">
                 {src ? <img src={src} className={`w-full h-full object-cover ${filter}`} /> : <i className="fa-solid fa-image text-4xl text-slate-300"></i>}
             </div>
         </div>
@@ -1442,25 +1795,40 @@ function ResultPreview({ title, src, filter = '' }) {
 }
 
 // Dark-mode vessel-segmentation preview that mirrors the Patient Report's
-// "Vessel Segmentation" panel: the uploaded image is run through the global
-// SVG Laplacian-edge filter and shown as bright vessels on a black canvas.
-function VesselSegmentationPreview({ title, src }) {
+// "Vessel Segmentation" panel. When the MATLAB pipeline supplies a real
+// base64 vessel mask, we render it directly; otherwise we fall back to the
+// global SVG vessel-extract filter applied to the raw fundus image. The
+// MATLAB mask is already ROI-clipped so it fills the panel naturally.
+function VesselSegmentationPreview({ title, src, maskB64 }) {
+    const raw = typeof maskB64 === 'string' ? maskB64.trim() : '';
+    const hasRealMask = raw.length > 256 && /^[A-Za-z0-9+/=\s]+$/.test(raw);
     return (
         <div className="calisto-card rounded-2xl p-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{title}</p>
-            <div className="aspect-square rounded-xl overflow-hidden bg-black flex items-center justify-center border border-slate-800">
-                {src
-                    ? <img src={src} className="w-full h-full object-cover" style={{ filter: 'url(#ocu-vessel-extract)' }} />
-                    : <i className="fa-solid fa-image text-4xl text-slate-600"></i>}
+            {/* Circular viewport: matches the other fundus panels and removes
+                the dark corner padding around the vessel mask. */}
+            <div className="aspect-square rounded-full overflow-hidden bg-black flex items-center justify-center border border-slate-800">
+                {hasRealMask
+                    ? <img src={`data:image/png;base64,${raw}`} className="w-full h-full" style={{ objectFit: 'fill', filter: 'brightness(1.2) contrast(1.15)' }} alt="Vessel mask" />
+                    : src
+                        ? <img src={src} className="w-full h-full object-cover" style={{ filter: 'url(#ocu-vessel-extract)' }} />
+                        : <i className="fa-solid fa-image text-4xl text-slate-600"></i>}
             </div>
         </div>
     );
 }
 
 // Normalise the AI model's intensity-statistic features into the 0–100 % bars
-// shown in the Screening Report's "Intensity Profile" card. If no features
-// were returned for some reason, falls back to neutral baseline values so the
-// UI never collapses.
+// shown in the Screening Report's generic "Intensity Profile" card (the
+// Healthy / "no specific disease" fallback). For Glaucoma, DR and AMD
+// scans, diseaseProfileBars() below produces a more clinically-meaningful
+// panel that highlights the features actually responsible for the verdict.
+//
+// NB: Intensity_Skewness and Intensity_Smoothness are NOT emitted by the
+// real Python feature_extraction pipeline (only DISPLAY_NAMES values are
+// returned), so those two bars show fallback constants on every real
+// scan. The disease-specific panels below pull from features the Python
+// engine actually produces, which is why they read true to the image.
 function intensityBarsFromFeatures(features) {
     const clamp = v => Math.max(0, Math.min(100, Math.round(v)));
     const f = features || {};
@@ -1478,14 +1846,155 @@ function intensityBarsFromFeatures(features) {
     ];
 }
 
-function IntensityBar({ label, val }) {
+// Disease-aware feature panel. Given the AI features dict and the diagnosis
+// string, returns { title, bars[] } where each bar exposes:
+//   label    - the feature's clinical name
+//   val      - 0-100 percent used to draw the bar
+//   display  - the underlying raw value shown to the right of the label
+//              (e.g. "0.47" or "6042 px²"), so the clinician sees the
+//              actual measurement, not just a normalised percent
+//   abnormal - true if the value crosses a clinical threshold; renders the
+//              bar in rose-500 so the eye lands on what's actually wrong
+//
+// Thresholds were chosen from standard clinical references:
+//   Glaucoma  - CDR ≥ 0.45 (U-Net scale, ≈ 0.55 clinical) flags as suspect;
+//               vessel symmetry < 0.85 indicates ISNT-rule violation
+//   DR        - vessel density outside 8-14% / GLCM contrast > 60 indicate
+//               microaneurysm + neovascular activity
+//   AMD       - low GLCM homogeneity / low energy indicate drusen-driven
+//               macular texture disruption
+function diseaseProfileBars(features, diagnosis) {
+    const clamp = v => Math.max(0, Math.min(100, Math.round(v)));
+    const num   = (v, fallback = 0) => Number.isFinite(v) ? v : fallback;
+    const fmt   = (v, digits = 2) => Number.isFinite(v) ? v.toFixed(digits) : '—';
+    const f = features || {};
+    const d = String(diagnosis || '').toLowerCase();
+
+    // Helper: does the features dict have at least `min` of the listed keys
+    // present as real finite, non-zero values? Used below to decide whether
+    // an uploaded model that declared (say) "Glaucoma" actually emitted the
+    // ONH features needed to populate the Optic Nerve panel. If it didn't —
+    // e.g. a stripped-down custom .m/.mlx that returns only diagnosis +
+    // score — we fall back to the generic Intensity Profile instead of
+    // showing a panel full of misleading 0% bars.
+    const hasAtLeast = (min, keys) => keys.filter(
+        k => Number.isFinite(f[k]) && Math.abs(f[k]) > 1e-9
+    ).length >= min;
+
+    const intensityFallback = () => ({
+        title: 'Intensity Profile',
+        bars: intensityBarsFromFeatures(features).map(b => ({
+            label: b.label, val: b.val, display: `${b.val}%`, abnormal: false,
+        })),
+    });
+
+    if (d.includes('glaucoma')) {
+        // Optic-disc detection can fail on macula-centred views (AMD scans,
+        // wide-field fundi where the disc is off-frame, etc.). When it does
+        // the backend zeroes out its trust in the disc by tagging the
+        // features with ONH_DetectionConfidence === 'low' and skipping the
+        // CDR fusion, but on the rare occasion the CNN still independently
+        // votes Glaucoma we MUST NOT show the Optic Nerve Profile — the
+        // CDR / Disc Area bars would be drawn from the bogus blob the
+        // U-Net misidentified as the disc. Fall back to the generic
+        // Intensity Profile so the report doesn't display a misleading
+        // "CDR = 0.70" next to a diagnosis that wasn't driven by the disc.
+        if (String(f.ONH_DetectionConfidence || '').toLowerCase() === 'low') {
+            return intensityFallback();
+        }
+        if (!hasAtLeast(2, [
+            'ONH_CupToDiscRatio', 'ONH_DiscArea_px2',
+            'Vessel_Symmetry',    'Vessel_GVD_pct',
+        ])) return intensityFallback();
+        const cdr      = num(f.ONH_CupToDiscRatio);
+        const discArea = num(f.ONH_DiscArea_px2);
+        const sym      = num(f.Vessel_Symmetry);
+        const gvd      = num(f.Vessel_GVD_pct);
+        return {
+            title: 'Optic Nerve Profile',
+            bars: [
+                { label: 'Cup-to-Disc Ratio', val: clamp(cdr * 100),
+                  display: fmt(cdr),                 abnormal: cdr >= 0.45 },
+                { label: 'Disc Area',         val: clamp(discArea / 100),
+                  display: `${Math.round(discArea)} px²`,
+                  abnormal: discArea < 5000 || discArea > 9500 },
+                { label: 'Vessel Symmetry',   val: clamp(sym * 100),
+                  display: fmt(sym),                 abnormal: sym < 0.85 },
+                { label: 'Vessel Density',    val: clamp(gvd * 5),
+                  display: `${fmt(gvd, 1)}%`,        abnormal: gvd < 6 || gvd > 16 },
+            ]
+        };
+    }
+
+    if (d.includes('retinopathy') || /(^|[^a-z])dr([^a-z]|$)/.test(d)) {
+        if (!hasAtLeast(2, [
+            'Vessel_GVD_pct', 'Vessel_MaxLVD', 'Vessel_Symmetry',
+            'GLCM_Contrast',  'Intensity_StdDev',
+        ])) return intensityFallback();
+        const gvd      = num(f.Vessel_GVD_pct);
+        const lvd      = num(f.Vessel_MaxLVD);
+        const sym      = num(f.Vessel_Symmetry);
+        const contrast = num(f.GLCM_Contrast);
+        const stddev   = num(f.Intensity_StdDev);
+        return {
+            title: 'Vascular Profile',
+            bars: [
+                { label: 'Vessel Density',     val: clamp(gvd * 5),
+                  display: `${fmt(gvd, 1)}%`,        abnormal: gvd > 14 || gvd < 8 },
+                { label: 'Local Density Peak', val: clamp(lvd * 100),
+                  display: fmt(lvd),                 abnormal: lvd > 0.55 },
+                { label: 'Vessel Symmetry',    val: clamp(sym * 100),
+                  display: fmt(sym),                 abnormal: sym < 0.85 },
+                { label: 'Texture Contrast',   val: clamp(contrast),
+                  display: fmt(contrast, 1),         abnormal: contrast > 60 },
+                { label: 'Intensity Spread',   val: clamp(stddev / 128 * 100),
+                  display: fmt(stddev, 1),           abnormal: stddev > 70 },
+            ]
+        };
+    }
+
+    if (d.includes('amd') || d.includes('macular')) {
+        if (!hasAtLeast(2, [
+            'GLCM_Homogeneity', 'GLCM_Energy',
+            'Intensity_Entropy', 'Intensity_Mean', 'Intensity_Uniformity',
+        ])) return intensityFallback();
+        const homog      = num(f.GLCM_Homogeneity);
+        const energy     = num(f.GLCM_Energy);
+        const entropy    = num(f.Intensity_Entropy);
+        const mean       = num(f.Intensity_Mean);
+        const uniformity = num(f.Intensity_Uniformity);
+        return {
+            title: 'Macular Profile',
+            bars: [
+                { label: 'Texture Homogeneity', val: clamp(homog * 100),
+                  display: fmt(homog),               abnormal: homog < 0.50 },
+                { label: 'GLCM Energy',         val: clamp(energy * 500),
+                  display: fmt(energy, 3),           abnormal: energy < 0.10 },
+                { label: 'Intensity Entropy',   val: clamp(entropy / 8 * 100),
+                  display: fmt(entropy, 2),          abnormal: entropy > 7.5 },
+                { label: 'Intensity Mean',      val: clamp(mean / 255 * 100),
+                  display: Math.round(mean).toString(),
+                  abnormal: mean < 90 || mean > 150 },
+                { label: 'Uniformity',          val: clamp(uniformity * 2000),
+                  display: fmt(uniformity, 4),       abnormal: uniformity < 0.005 },
+            ]
+        };
+    }
+
+    // Healthy / unknown / unrecognised diagnosis -> generic Intensity Profile.
+    return intensityFallback();
+}
+
+function IntensityBar({ label, val, display, abnormal }) {
+    const labelCls = abnormal ? 'text-rose-600' : 'text-slate-400';
+    const barCls   = abnormal ? 'bg-rose-500'  : 'bg-slate-900';
     return (
         <div className="space-y-1.5 mb-3">
-            <div className="flex justify-between text-[10px] font-bold uppercase text-slate-400">
-                <span>{label}</span><span>{val}%</span>
+            <div className={`flex justify-between text-[10px] font-bold uppercase ${labelCls}`}>
+                <span>{label}</span><span>{display ?? `${val}%`}</span>
             </div>
             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-slate-900 rounded-full" style={{ width: `${val}%` }}></div>
+                <div className={`h-full rounded-full ${barCls}`} style={{ width: `${val}%` }}></div>
             </div>
         </div>
     );
@@ -1496,6 +2005,86 @@ function MetricCard({ label, value }) {
         <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
             <p className="text-xl font-bold text-[#1a1a1e]">{value}</p>
+        </div>
+    );
+}
+
+// Gender Distribution donut for the Analytics Dashboard. Renders an SVG
+// donut so the slices animate cleanly without pulling in a chart library.
+// Each slice is drawn as a stroked circle whose `stroke-dasharray` is set
+// to (slice arc length, remaining circumference) and rotated into place
+// with `transform: rotate(...)`. The empty-state (no records yet) keeps
+// the donut ring visible in slate so the card never collapses to a blank
+// box.
+function GenderDistributionPie({ stats }) {
+    const safe = stats || { total: 0, male: { count: 0, pct: 0 }, female: { count: 0, pct: 0 }, other: { count: 0, pct: 0 } };
+    const radius = 56;
+    const stroke = 18;
+    const cx = 80, cy = 80;
+    const C = 2 * Math.PI * radius;
+    const slices = [
+        { key: 'male',   label: 'Male',   pct: safe.male.pct,   count: safe.male.count,   color: '#3b82f6' },
+        { key: 'female', label: 'Female', pct: safe.female.pct, count: safe.female.count, color: '#ec4899' },
+        { key: 'other',  label: 'Other',  pct: safe.other.pct,  count: safe.other.count,  color: '#94a3b8' },
+    ].filter(s => s.pct > 0 || (safe.total === 0 && s.key !== 'other'));
+    const isEmpty = safe.total === 0;
+    let acc = 0;
+    return (
+        <div>
+            <div className="flex items-baseline justify-between mb-3">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gender Distribution</p>
+                <p className="text-[9px] font-semibold text-slate-300 uppercase tracking-wider">Whole Registry</p>
+            </div>
+            <div className="flex items-center gap-6">
+                <svg viewBox="0 0 160 160" className="w-32 h-32 -rotate-90 shrink-0">
+                    <circle cx={cx} cy={cy} r={radius} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
+                    {!isEmpty && slices.map(s => {
+                        const arc = (s.pct / 100) * C;
+                        const offset = -acc;
+                        acc += arc;
+                        return (
+                            <circle key={s.key}
+                                cx={cx} cy={cy} r={radius}
+                                fill="none"
+                                stroke={s.color}
+                                strokeWidth={stroke}
+                                strokeDasharray={`${arc} ${C - arc}`}
+                                strokeDashoffset={offset}
+                                style={{ transition: 'stroke-dasharray 0.6s ease-out' }}
+                            />
+                        );
+                    })}
+                    <text x={cx} y={cy + 2} textAnchor="middle" dominantBaseline="middle"
+                          transform={`rotate(90 ${cx} ${cy})`}
+                          className="fill-slate-800"
+                          style={{ fontSize: '22px', fontWeight: 700 }}>
+                        {safe.total}
+                    </text>
+                    <text x={cx} y={cy + 22} textAnchor="middle" dominantBaseline="middle"
+                          transform={`rotate(90 ${cx} ${cy})`}
+                          className="fill-slate-400"
+                          style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                        PATIENTS
+                    </text>
+                </svg>
+                <div className="flex-1 space-y-2">
+                    {slices.map(s => (
+                        <div key={s.key} className="flex items-center justify-between text-[11px]">
+                            <span className="flex items-center gap-2 text-slate-600">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }}></span>
+                                <span className="font-semibold">{s.label}</span>
+                            </span>
+                            <span className="font-mono text-slate-700">
+                                <span className="font-bold">{s.pct}%</span>
+                                <span className="text-slate-400 font-normal ml-1">({s.count})</span>
+                            </span>
+                        </div>
+                    ))}
+                    {isEmpty && (
+                        <p className="text-[10px] text-slate-400">No patients in the registry yet.</p>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
@@ -1654,20 +2243,47 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
         </div>
     );
 }
-// Analytics dummy (click for toast)
-function Analytics({ showToast }) {
+// Analytics — derives every metric from the live records array so the
+// Insights page is always in lock-step with the Overview / Dashboard.
+// All numeric work uses the helpers at the top of this file
+// (caseDistribution, dailyVolume, weeklyVolume, ageGroupPeak,
+// criticalCount, reviewedPerDay).
+function Analytics({ records = [], showToast }) {
     const [range, setRange] = useState('7d');
-    const data = range === '30d'
-        ? { cases: [56,19,14,11], trend: [54,74,62,78], labels: ['Wk 1','Wk 2','Wk 3','Wk 4'] }
-        : { cases: [64,16,12,8], trend: [12,15,18,25,30,17,16], labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] };
-    const trendColors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#ef4444'];
+    const days = range === '30d' ? 30 : 7;
+
+    const recentRecords = useMemo(() => getRecentRecords(records, days),    [records, days]);
+    const distribution  = useMemo(() => caseDistribution(recentRecords),     [recentRecords]);
+    const trendBars     = useMemo(() => (
+        days <= 14 ? dailyVolume(recentRecords, days) : weeklyVolume(recentRecords, 4)
+    ), [recentRecords, days]);
+    const ageStats      = useMemo(() => ageGroupPeak(recentRecords),         [recentRecords]);
+    const reviewed      = useMemo(() => reviewedPerDay(recentRecords, days), [recentRecords, days]);
+    // Gender distribution is sourced from the FULL Patient Registry, not
+    // the active time-window. Demographics are a property of the patient
+    // base, not the recent screening volume — limiting the donut to the
+    // last 7/30 days hid every patient screened earlier and produced a
+    // distorted "X PATIENTS" count that disagreed with the actual
+    // registry. genderDistribution() deduplicates by `${name}|${age}` so
+    // the donut now reports unique patients across the whole registry.
+    const genderStats   = useMemo(() => genderDistribution(records),         [records]);
+
+    // Colour order must match caseDistribution(): Normal, DR, Glaucoma, AMD.
     const caseColors  = ['#10b981','#ef4444','#8b5cf6','#f59e0b'];
+    const trendColors = DAILY_BAR_COLORS;
+
+    const maxTrend    = Math.max(1, ...trendBars.map(b => b.count));
+    const maxReviewed = Math.max(1, ...reviewed.series.map(s => s.count));
+    const todayKey    = todayYMD();
+
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-8">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Analytics Dashboard</h1>
-                    <p className="text-slate-500 mt-1">Case distribution, screening volume, and AI efficiency metrics.</p>
+                    <p className="text-slate-500 mt-1">
+                        Computed from {recentRecords.length} record{recentRecords.length === 1 ? '' : 's'} in the last {days} days.
+                    </p>
                 </div>
                 <div className="flex gap-2">
                     {['7d','30d','custom'].map(item => (
@@ -1681,19 +2297,19 @@ function Analytics({ showToast }) {
                 <div className="calisto-card rounded-3xl p-8">
                     <h3 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-6">Case Distribution</h3>
                     <div className="space-y-4">
-                        {['Normal','DR','Glaucoma','AMD'].map((label, i) => {
+                        {distribution.map((item, i) => {
                             const color = caseColors[i % caseColors.length];
                             return (
-                                <div key={label}>
+                                <div key={item.label}>
                                     <div className="flex justify-between text-xs font-bold text-slate-500 mb-1.5">
                                         <span className="flex items-center gap-2">
                                             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }}></span>
-                                            {label}
+                                            {item.label}
                                         </span>
-                                        <span>{data.cases[i]}%</span>
+                                        <span>{item.pct}% <span className="text-slate-400 font-normal">({item.count})</span></span>
                                     </div>
                                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${data.cases[i]}%`, backgroundColor: color }}></div>
+                                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${item.pct}%`, backgroundColor: color }}></div>
                                     </div>
                                 </div>
                             );
@@ -1709,17 +2325,19 @@ function Analytics({ showToast }) {
                         <MetricCard label="Avg Latency" value="1.2s" />
                     </div>
                     <div className="h-56 flex items-end gap-3">
-                        {data.trend.map((value, i) => {
+                        {trendBars.map((bar, i) => {
                             const color = trendColors[i % trendColors.length];
+                            const heightPct = Math.max(8, Math.round((bar.count / maxTrend) * 100));
                             return (
-                                <div key={i} className="flex-1 flex flex-col items-center gap-3">
+                                <div key={`${bar.label}-${i}`} className="flex-1 flex flex-col items-center gap-3">
                                     <div className="w-full bg-slate-100 rounded-t-xl relative overflow-hidden" style={{ height: '180px' }}>
+                                        <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-slate-500">{bar.count}</span>
                                         <div
                                             className="absolute bottom-0 w-full rounded-t-xl shadow-lg opacity-90 hover:opacity-100"
-                                            style={{ height: `${Math.max(18, value * 2)}px`, backgroundColor: color, transition: 'height 0.6s cubic-bezier(.65,-0.03,.51,1.09)' }}
+                                            style={{ height: `${heightPct}%`, backgroundColor: color, transition: 'height 0.6s cubic-bezier(.65,-0.03,.51,1.09)' }}
                                         ></div>
                                     </div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase">{data.labels[i]}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase">{bar.label}</span>
                                 </div>
                             );
                         })}
@@ -1727,9 +2345,48 @@ function Analytics({ showToast }) {
                 </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                <div className="calisto-card rounded-2xl p-6"><MetricCard label="Disease Trend" value="+8.4%" /></div>
-                <div className="calisto-card rounded-2xl p-6"><MetricCard label="Age Group Peak" value="40-59" /></div>
-                <div className="calisto-card rounded-2xl p-6"><MetricCard label="Review Queue" value="7 cases" /></div>
+                <div className="calisto-card rounded-2xl p-6">
+                    <GenderDistributionPie stats={genderStats} />
+                </div>
+                <div className="calisto-card rounded-2xl p-6">
+                    <MetricCard label="Age Group Peak" value={ageStats.peak.count > 0 ? `${ageStats.peak.label} (${ageStats.peak.count})` : 'No data'} />
+                    <div className="mt-3 space-y-1.5">
+                        {ageStats.bins.map(b => {
+                            const widthPct = ageStats.peak.count > 0 ? Math.round((b.count / ageStats.peak.count) * 100) : 0;
+                            const isPeak = b.label === ageStats.peak.label && b.count > 0;
+                            return (
+                                <div key={b.label} className="flex items-center gap-2 text-[11px] text-slate-500">
+                                    <span className={`w-10 font-mono ${isPeak ? 'font-bold text-slate-700' : ''}`}>{b.label}</span>
+                                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className={`h-full ${isPeak ? 'bg-emerald-500' : 'bg-slate-400'}`} style={{ width: `${widthPct}%`, transition: 'width 0.4s ease-out' }}></div>
+                                    </div>
+                                    <span className="w-6 text-right tabular-nums">{b.count}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="calisto-card rounded-2xl p-6">
+                    <MetricCard label="Reviewed Today" value={`${reviewed.todayCount} ${reviewed.todayCount === 1 ? 'case' : 'cases'}`} />
+                    <div className="mt-3 space-y-1.5">
+                        {reviewed.series.slice(-7).map(s => {
+                            const isToday = s.key === todayKey;
+                            const widthPct = Math.round((s.count / maxReviewed) * 100);
+                            return (
+                                <div key={s.key} className="flex items-center gap-2 text-[11px] text-slate-500">
+                                    <span className={`w-10 font-mono ${isToday ? 'font-bold text-slate-700' : ''}`}>{s.label}</span>
+                                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className={`h-full ${isToday ? 'bg-emerald-500' : 'bg-slate-400'}`} style={{ width: `${widthPct}%`, transition: 'width 0.4s ease-out' }}></div>
+                                    </div>
+                                    <span className="w-6 text-right tabular-nums">{s.count}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-3">
+                        Avg {reviewed.avg.toFixed(1)} / day over the last {days} days.
+                    </p>
+                </div>
             </div>
         </div>
     );
@@ -2809,8 +3466,10 @@ function vesselPath(rng, ox, oy) {
 function FundusSVG({ mode = 'original', cdr = 0.3, condition = '', seed = 1 }) {
     const cond = (condition || '').toLowerCase();
     const cupScale = Math.max(0.18, Math.min(0.94, cdr));
-    const discRx = 6.4, discRy = 7.2;
-    const cupRx = discRx * cupScale, cupRy = discRy * cupScale;
+    // Disc and cup are CIRCLES (single radius) so the overlays stay
+    // perfectly circular instead of stretching into ovals.
+    const discR = 6.8;
+    const cupR  = discR * cupScale;
     const ox = 65, oy = 50;
     const gradientId = `retina-${seed}-${mode}`;
 
@@ -2863,15 +3522,15 @@ function FundusSVG({ mode = 'original', cdr = 0.3, condition = '', seed = 1 }) {
                 <path key={i} d={v.d} stroke="#7a1a0c" strokeWidth={v.w * 0.95} fill="none" strokeLinecap="round" opacity="0.92" />
             ))}
             <circle cx="40" cy="50" r="3.2" fill="#3d1206" opacity="0.55" />
-            <ellipse cx={ox} cy={oy} rx={discRx} ry={discRy} fill="#fde9b6" />
-            <ellipse cx={ox} cy={oy} rx={cupRx} ry={cupRy} fill="#fff8da" />
+            <circle cx={ox} cy={oy} r={discR} fill="#fde9b6" />
+            <circle cx={ox} cy={oy} r={cupR}  fill="#fff8da" />
             {lesions.map((l, i) => (
                 <circle key={i} cx={l.cx} cy={l.cy} r={l.r} fill={lesionFill} opacity="0.92" />
             ))}
             {mode === 'onh' && (
                 <>
-                    <ellipse cx={ox} cy={oy} rx={discRx} ry={discRy} fill="none" stroke="#65d873" strokeWidth="0.8" />
-                    <ellipse cx={ox} cy={oy} rx={cupRx} ry={cupRy} fill="none" stroke="#ff5050" strokeWidth="0.65" />
+                    <circle cx={ox} cy={oy} r={discR} fill="none" stroke="#65d873" strokeWidth="0.8" />
+                    <circle cx={ox} cy={oy} r={cupR}  fill="none" stroke="#ff5050" strokeWidth="0.65" />
                 </>
             )}
         </svg>
@@ -2897,7 +3556,11 @@ function ReportRow({ label, value, mono }) {
 function FundusPanel({ title, subtitle, children }) {
     return (
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
-            <div className="aspect-square rounded-xl overflow-hidden bg-black relative">{children}</div>
+            {/* Circular viewport: crops the inherently-circular fundus content
+                to a perfect circle so ONH / Vessel / CLAHE / Original panels
+                all read as clean circles rather than square frames with dark
+                corner padding. */}
+            <div className="aspect-square rounded-full overflow-hidden bg-black relative">{children}</div>
             <p className="text-[10px] uppercase tracking-widest text-slate-200 font-bold mt-3">{title}</p>
             {subtitle && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{subtitle}</p>}
         </div>
@@ -2908,8 +3571,29 @@ function FundusPanel({ title, subtitle, children }) {
 // When the patient record carries the original upload, we render it directly
 // (with CSS filters approximating CLAHE / vessel / ONH outputs) so the report
 // always reflects the same image the clinician uploaded in Diagnostics.
-function FundusImagePanel({ mode, src, cdr = 0.3 }) {
+function FundusImagePanel({ mode, src, cdr = 0.3, features = null }) {
     if (mode === 'vessel') {
+        // Preferred path: the MATLAB pipeline shipped back a base64 PNG of
+        // the real vessel mask — render it directly so the panel matches
+        // what MATLAB's bwmorph / top-hat pipeline produced. Fall back to
+        // the CSS SVG filter on the raw image for legacy/demo records.
+        // The MATLAB mask is already restricted to the retina ROI, so we
+        // render it at full panel size to match the other three panels.
+        const f = features || {};
+        const rawMask = typeof f.Vessel_MaskPng === 'string' ? f.Vessel_MaskPng.trim() : '';
+        const hasRealMask = rawMask.length > 256 && /^[A-Za-z0-9+/=\s]+$/.test(rawMask);
+        if (hasRealMask) {
+            return (
+                <div className="w-full h-full relative bg-black">
+                    <img
+                        src={`data:image/png;base64,${rawMask}`}
+                        alt="Vessel segmentation mask"
+                        className="absolute inset-0 w-full h-full"
+                        style={{ objectFit: 'fill', filter: 'brightness(1.2) contrast(1.15)' }}
+                    />
+                </div>
+            );
+        }
         return (
             <div className="w-full h-full relative bg-black">
                 <img
@@ -2934,15 +3618,42 @@ function FundusImagePanel({ mode, src, cdr = 0.3 }) {
     }
 
     if (mode === 'onh') {
+        // Prefer the real disc/cup geometry reported by the AI pipeline
+        // (normalised to the 512x512 working frame). Newer extractor builds
+        // emit ONH_DiscRadiusX_norm / ONH_DiscRadiusY_norm so the disc can
+        // be drawn as an ellipse that follows the U-Net mask's true aspect
+        // ratio; older records (with only ONH_DiscRadius_norm) still draw
+        // a circle. Falls back to a centred pair of ellipses for legacy
+        // records that pre-date the ONH features entirely.
+        const f = features || {};
+        const inUnit = v => Number.isFinite(v) && v >= 0 && v <= 1;
         const cupScale = Math.max(0.18, Math.min(0.94, cdr));
-        const discRx = 14, discRy = 16;
-        const cupRx = discRx * cupScale, cupRy = discRy * cupScale;
+        const fallbackDiscR = 0.16;
+        const dcx = inUnit(f.ONH_DiscCenterX_norm) ? f.ONH_DiscCenterX_norm : 0.5;
+        const dcy = inUnit(f.ONH_DiscCenterY_norm) ? f.ONH_DiscCenterY_norm : 0.5;
+        const dr  = inUnit(f.ONH_DiscRadius_norm)  ? f.ONH_DiscRadius_norm  : fallbackDiscR;
+        const drx = inUnit(f.ONH_DiscRadiusX_norm) ? f.ONH_DiscRadiusX_norm : dr;
+        const dry = inUnit(f.ONH_DiscRadiusY_norm) ? f.ONH_DiscRadiusY_norm : dr;
+        const ccx = inUnit(f.ONH_CupCenterX_norm)  ? f.ONH_CupCenterX_norm  : dcx;
+        const ccy = inUnit(f.ONH_CupCenterY_norm)  ? f.ONH_CupCenterY_norm  : dcy;
+        const crx = inUnit(f.ONH_CupRadiusX_norm)  ? f.ONH_CupRadiusX_norm  : dr * cupScale;
+        const cry = inUnit(f.ONH_CupRadiusY_norm)  ? f.ONH_CupRadiusY_norm  : dr * cupScale;
+        // Floor the cup radii so they never collapse below a sliver of the
+        // disc — this keeps the overlay readable even when the U-Net's cup
+        // segmentation is tiny (e.g. on healthy fundi with shallow cups).
+        const crxFinal = Math.max(crx, drx * 0.18);
+        const cryFinal = Math.max(cry, dry * 0.18);
         return (
             <div className="relative w-full h-full">
-                <img src={src} alt="ONH segmentation" className="w-full h-full object-cover" />
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
-                    <ellipse cx="50" cy="50" rx={discRx} ry={discRy} fill="none" stroke="#65d873" strokeWidth="1.2" />
-                    <ellipse cx="50" cy="50" rx={cupRx} ry={cupRy} fill="none" stroke="#ff5050" strokeWidth="1" />
+                {/* object-fill matches the AI pipeline's resize(img,[512 512]),
+                    so normalised disc/cup coordinates map 1:1 onto the displayed pixels. */}
+                <img src={src} alt="ONH segmentation" className="absolute inset-0 w-full h-full" style={{ objectFit: 'fill' }} />
+                <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                    {/* Soft glow halo so the disc outline stays visible on bright fundi */}
+                    <ellipse cx={dcx} cy={dcy} rx={drx} ry={dry} fill="none" stroke="rgba(101,216,115,0.35)" strokeWidth="4" vectorEffect="non-scaling-stroke" />
+                    <ellipse cx={dcx} cy={dcy} rx={drx} ry={dry} fill="none" stroke="#65d873" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
+                    <ellipse cx={ccx} cy={ccy} rx={crxFinal} ry={cryFinal} fill="none" stroke="rgba(255,80,80,0.35)" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+                    <ellipse cx={ccx} cy={ccy} rx={crxFinal} ry={cryFinal} fill="none" stroke="#ff5050" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
                 </svg>
             </div>
         );
@@ -3063,22 +3774,22 @@ function RecordModal({ record, onClose }) {
                         <div className="ocu-print-grid-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
                             <FundusPanel title="Resized Fundus" subtitle="RGB original">
                                 {record.fundus_image
-                                    ? <FundusImagePanel mode="original" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    ? <FundusImagePanel mode="original" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} features={features} />
                                     : <FundusSVG mode="original" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                             <FundusPanel title="CLAHE Enhanced" subtitle="clip=0.005, tile=8x8">
                                 {record.fundus_image
-                                    ? <FundusImagePanel mode="clahe" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    ? <FundusImagePanel mode="clahe" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} features={features} />
                                     : <FundusSVG mode="clahe" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                             <FundusPanel title="Vessel Segmentation" subtitle={`GVD: ${features.Vessel_GVD_pct.toFixed(2)}%`}>
                                 {record.fundus_image
-                                    ? <FundusImagePanel mode="vessel" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    ? <FundusImagePanel mode="vessel" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} features={features} />
                                     : <FundusSVG mode="vessel" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                             <FundusPanel title="ONH Segmentation" subtitle={`CDR: ${features.ONH_CupToDiscRatio.toFixed(4)}`}>
                                 {record.fundus_image
-                                    ? <FundusImagePanel mode="onh" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} />
+                                    ? <FundusImagePanel mode="onh" src={record.fundus_image} cdr={features.ONH_CupToDiscRatio} features={features} />
                                     : <FundusSVG mode="onh" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                         </div>
@@ -3310,8 +4021,6 @@ const App = () => {
                         setView('screening');
                         triggerToast('Navigate to diagnostics.');
                     }}
-                    analysesToday={records.length + 12}
-                    alerts={records.filter(r=>r.result!=="Healthy").length}
                     statsChartDemo={() => triggerToast("Bar chart reacts to interaction (demo).")}
                     recordsDemo={records}
                     onRecordClick={setModalRecord}
@@ -3337,7 +4046,7 @@ const App = () => {
                   />
                 </div>
                 <div style={{ display: view === 'analytics' ? 'block' : 'none' }}>
-                  <Analytics showToast={triggerToast} />
+                  <Analytics records={records} showToast={triggerToast} />
                 </div>
                 <div style={{ display: view === 'settings' ? 'block' : 'none' }}>
                   <Settings
