@@ -1,4 +1,4 @@
-M<img width="225" height="225" alt="Calisto Logo" src="https://github.com/user-attachments/assets/f9b3abbb-e162-4a00-9091-40ef15c8f5f0" />
+<img width="225" height="225" alt="Calisto Logo" src="https://github.com/user-attachments/assets/f9b3abbb-e162-4a00-9091-40ef15c8f5f0" />
 # Calisto 🚀
 
 <p align="center">
