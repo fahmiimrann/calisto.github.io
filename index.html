@@ -9,38 +9,20 @@
     <link rel="shortcut icon" type="image/png" href="Calisto Logo.png">
     <link rel="apple-touch-icon" href="Calisto Logo.png">
 
-    <!-- === OPTIMIZED CDN LOADING === -->
-    <!-- Tailwind CSS with higher priority + timeout -->
-    <script src="https://cdn.tailwindcss.com" async defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Font Awesome with fallback mechanism -->
-    <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
-    
-    <!-- Chart.js with fallback -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js" async defer></script>
-    
-    <!-- React stack with parallel loading (no render blocking) -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" async defer></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" async defer></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" async defer></script>
-    
-    <!-- Google Fonts (preconnect reduces latency) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- === FALLBACK STYLES === -->
-    <!-- If Font Awesome fails to load, this provides icon substitutes -->
     <style>
-        /* Critical path: inline essential styles to avoid FOUC */
-        html, body {
-            margin: 0;
-            padding: 0;
-        }
-
         body {
-            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'Plus Jakarta Sans', sans-serif;
             background:
                 radial-gradient(circle at 12% 14%, rgba(190, 232, 221, 0.62) 0, transparent 30%),
                 radial-gradient(circle at 86% 8%, rgba(221, 235, 255, 0.72) 0, transparent 28%),
@@ -167,7 +149,6 @@
             border: 1px solid rgba(226, 232, 240, 0.9);
         }
 
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
@@ -180,14 +161,6 @@
           to { opacity: 1; transform: translateY(0);}
         }
 
-        /* Slow blink animation for the AI Diagnostic Pipeline loader
-           (OpticalLoader). The 4.5 s cycle (period between blinks) is
-           unchanged; we just stretch the close+open motion itself so the
-           eyelid moves more languidly:
-             0%   -> 82% : fully open
-             82%  -> 91% : eyelid closing  (~405 ms)
-             91%  -> 100%: eyelid reopening (~405 ms)
-           ease-in-out keeps the motion organic rather than mechanical. */
         @keyframes ocu-blink {
           0%, 82%, 100% { transform: scaleY(1); }
           91%           { transform: scaleY(0.06); }
@@ -198,25 +171,7 @@
           will-change: transform;
         }
 
-        /* ------------------------------------------------------------------
-         * PRINT / "Download PDF" styles for the Diagnostic Report modal.
-         * When the user clicks "Print Report" we add `ocu-printing` to <body>
-         * just before calling window.print(). These rules then:
-         *   1. Hide every other page element (sidebar, header, toast, …)
-         *      via visibility, so only the report subtree paints.
-         *   2. Strip the modal of its viewport-fitting constraints
-         *      (max-h-[92vh], overflow-y-auto, sticky header/footer) so the
-         *      entire report flows naturally across A4 pages.
-         *   3. Hide the close X button and the bottom action bar.
-         *   4. Allow page breaks between major sections.
-         * ------------------------------------------------------------------ */
         @media print {
-            /* Custom page sized to comfortably fit the ENTIRE diagnostic
-               report (header + Patient/AI cards + Clinical Interpretation +
-               4 fundus panels + Extracted Features + Intensity Statistics)
-               on a SINGLE PDF page, with zero page margin so the report
-               renders edge-to-edge ("full screen" look). Visual margins are
-               handled by the report's inner padding instead. */
             @page {
                 size: 210mm 420mm;
                 margin: 0;
@@ -242,8 +197,6 @@
                 display: none !important;
             }
 
-            /* Detach the modal from its fixed-position backdrop and make it
-               flow at full page width with no scroll constraints. */
             body.ocu-printing .ocu-print-backdrop {
                 position: static !important;
                 inset: auto !important;
@@ -271,8 +224,6 @@
                 border: 0 !important;
             }
 
-            /* Single-page report: do NOT split sections across pages.
-               break-inside: avoid keeps each card intact. */
             body.ocu-printing .ocu-print-section {
                 break-inside: avoid;
                 page-break-inside: avoid;
@@ -282,9 +233,6 @@
                 page-break-inside: avoid;
             }
 
-            /* Tailwind's md: / lg: responsive grid breakpoints don't fire
-               at print width, so the report would otherwise collapse to a
-               single column. Force the layout to its on-screen shape here. */
             body.ocu-printing .ocu-print-area .ocu-print-grid-2 {
                 display: grid !important;
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -296,9 +244,6 @@
                 gap: 0.5rem !important;
             }
 
-            /* Edge-to-edge layout: the @page margin is 0, so the report's
-               inner padding is what gives the visual breathing room around
-               the content. */
             body.ocu-printing .ocu-print-area .ocu-print-body {
                 padding: 10mm 12mm !important;
             }
@@ -314,27 +259,17 @@
                 font-size: 1.5rem !important;
                 line-height: 1.2 !important;
             }
-            /* Slightly tighter card padding in print so the layout still
-               feels like a polished report and not a wireframe. */
             body.ocu-printing .ocu-print-area .p-6 { padding: 1rem !important; }
             body.ocu-printing .ocu-print-area .p-5 { padding: 0.9rem !important; }
             body.ocu-printing .ocu-print-area .p-3 { padding: 0.4rem !important; }
-            /* Slimmer fundus panel labels under each thumbnail. */
             body.ocu-printing .ocu-print-area .ocu-print-grid-4 .mt-3 {
                 margin-top: 0.45rem !important;
             }
 
-            /* Force Chrome / Edge to keep card backgrounds and the dark
-               fundus panels visible in the PDF (they're stripped otherwise). */
             body.ocu-printing * {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
-        }
-
-        /* Fallback for Font Awesome if CDN fails */
-        .fa::before {
-            font-family: system-ui, -apple-system, sans-serif;
         }
     </style>
 </head>
@@ -345,118 +280,41 @@
     </video>
     <div class="video-overlay"></div>
 </div>
-<!-- Global SVG filters used by the fundus vessel-segmentation panels.
-     `ocu-vessel-extract` is the *fallback* used only when the MATLAB
-     pipeline did not ship back a real vessel mask (demo records / legacy
-     scans). It uses a 5x5 Laplacian-of-Gaussian on the inverted green
-     channel — that highlights thin bright structures (vessels in inverted
-     green) without producing the wide blurred halo around the retina-to-
-     corner boundary that a Gaussian top-hat would. Alpha is forced back to
-     1 because feConvolveMatrix preserves alpha but later ops can null it. -->
+
 <svg width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
     <defs>
         <filter id="ocu-vessel-extract" color-interpolation-filters="sRGB" x="0%" y="0%" width="100%" height="100%">
-            <!-- 1) Green channel only (highest vessel contrast on fundus images) -->
-            <feColorMatrix type="matrix" values="0 1 0 0 0
-                                                 0 1 0 0 0
-                                                 0 1 0 0 0
-                                                 0 0 0 1 0" result="green"/>
-            <!-- 2) Invert so dark vessels become bright structures -->
-            <feColorMatrix in="green" type="matrix" values="-1 0 0 0 1
-                                                            -1 0 0 0 1
-                                                            -1 0 0 0 1
-                                                             0 0 0 1 0" result="inverted"/>
-            <!-- 3) 5x5 Laplacian-of-Gaussian — fires on thin bright features,
-                 stays near zero on flat / smoothly-transitioning regions, so
-                 the retina-to-corner edge produces at most a one-pixel ring
-                 instead of a wide halo. -->
-            <feConvolveMatrix in="inverted" order="5" preserveAlpha="true"
-                kernelMatrix=" 0  0 -1  0  0
-                               0 -1 -2 -1  0
-                              -1 -2 16 -2 -1
-                               0 -1 -2 -1  0
-                               0  0 -1  0  0"
-                result="edges"/>
-            <!-- 4) Moderate amplification + opaque alpha -->
+            <feColorMatrix type="matrix" values="0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 1 0" result="green"/>
+            <feColorMatrix in="green" type="matrix" values="-1 0 0 0 1 -1 0 0 0 1 -1 0 0 0 1 0 0 0 1 0" result="inverted"/>
+            <feConvolveMatrix in="inverted" order="5" preserveAlpha="true" kernelMatrix=" 0  0 -1  0  0 0 -1 -2 -1  0 -1 -2 16 -2 -1 0 -1 -2 -1  0 0  0 -1  0  0" result="edges"/>
             <feComponentTransfer in="edges">
                 <feFuncR type="linear" slope="2.5" intercept="0"/>
                 <feFuncG type="linear" slope="2.5" intercept="0"/>
                 <feFuncB type="linear" slope="2.5" intercept="0"/>
-                <feFuncA type="linear" slope="0"   intercept="1"/>
+                <feFuncA type="linear" slope="0" intercept="1"/>
             </feComponentTransfer>
         </filter>
     </defs>
 </svg>
+
 <div id="root"></div>
-
-<!-- === RESOURCE LOADING GUARD === -->
-<!-- Ensures the app doesn't start rendering until critical deps are available.
-     This prevents race conditions where React renders before the DOM is ready. -->
-<script>
-window.CDN_TIMEOUT = 8000; // 8s max wait for CDNs during build
-window.resourcesReady = {
-    react: false,
-    babel: false,
-    tailwind: false
-};
-
-// Monitor when critical resources load
-if (typeof window.React !== 'undefined') window.resourcesReady.react = true;
-if (typeof window.Babel !== 'undefined') window.resourcesReady.babel = true;
-if (typeof window.tailwind !== 'undefined') window.resourcesReady.tailwind = true;
-
-// Set a safety timeout: if resources don't load in time, start anyway
-setTimeout(() => {
-    window.resourcesReady.forceStart = true;
-}, window.CDN_TIMEOUT);
-</script>
 
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
-// Backend URL resolution (priority order):
-//
-//   1. `localStorage.ocuvision-backend-url` — user-overridable at runtime via
-//      the browser console:
-//          localStorage.setItem('ocuvision-backend-url', 'https://my.tunnel.example.com');
-//          location.reload();
-//      Handy for ad-hoc Cloudflare quick-tunnels whose URL changes every time.
-//
-//   2. `TUNNEL_API_BASE_URL` below — set this to your stable Cloudflare Named
-//      Tunnel (or ngrok reserved domain) hostname to point GitHub Pages at
-//      your local Node + MATLAB server. Leave blank to skip this layer.
-//
-//   3. When the page is opened from localhost / 127.0.0.1, call the same-origin
-//      Node server directly (no CORS), which is how MATLAB is reached during
-//      local development.
-//
-//   4. Otherwise fall back to the hosted Render backend (demo mode only — no
-//      MATLAB on Render).
 const REMOTE_API_BASE_URL = "https://ocuvision-backend.onrender.com";
-
-// >>> Paste your Cloudflare Tunnel / ngrok URL here (no trailing slash) <<<
-// Example:
-//   const TUNNEL_API_BASE_URL = "https://ocuvision-fahmi.trycloudflare.com";
 const TUNNEL_API_BASE_URL = "";
 
 function resolveApiBaseUrl() {
     try {
-        const override = (typeof localStorage !== 'undefined') &&
-            (localStorage.getItem('ocuvision-backend-url') || '').trim();
+        const override = (typeof localStorage !== 'undefined') && (localStorage.getItem('ocuvision-backend-url') || '').trim();
         if (override) return override.replace(/\/$/, '');
     } catch (e) {}
-
     try {
         const host = (typeof window !== 'undefined' && window.location && window.location.hostname) || '';
-        const isLocal =
-            host === 'localhost' ||
-            host === '127.0.0.1' ||
-            host === '0.0.0.0' ||
-            host === '[::1]' ||
-            host.endsWith('.local');
+        const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '[::1]' || host.endsWith('.local');
         if (isLocal) return '';
     } catch (e) {}
-
     if (TUNNEL_API_BASE_URL) return TUNNEL_API_BASE_URL.replace(/\/$/, '');
     return REMOTE_API_BASE_URL;
 }
@@ -488,18 +346,15 @@ async function apiRequest(path, options = {}) {
     const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
     const contentType = response.headers.get("content-type") || "";
     const data = contentType.includes("application/json") ? await response.json() : {};
-
     if (!response.ok) {
         const err = new Error(data.error || data.message || "Backend request failed.");
         err.status = response.status;
         err.payload = data;
         throw err;
     }
-
     return data;
 }
 
-// Convenience helpers wrapping the JSON endpoints we use most.
 function apiJson(path, method, body) {
     return apiRequest(path, {
         method,
@@ -514,264 +369,154 @@ async function dataUrlToFile(dataUrl, fileName) {
     return new File([blob], fileName, { type: blob.type || "image/png" });
 }
 
-function normalizeAnalysisResult(data, fileName) {
-    const severity = data.severity || data.status || "Healthy";
-    const status = data.status || (
-        severity === "Critical" ? "Alert" :
-        severity === "Moderate" ? "Warning" :
-        "Optimal"
-    );
-    const confidence = String(data.confidence || data.score || "0").replace("%", "");
-    const diagnosis = data.diagnosis || data.result || "Healthy";
-
-    return {
-        status,
-        score: confidence,
-        diagnosis: diagnosis.startsWith("Detection Result:") ? diagnosis : `Detection Result: ${diagnosis}`,
-        notes: data.notes || data.recommendation || "AI backend analysis completed. Expert clinical validation is recommended.",
-        severity,
-        features: data.features && typeof data.features === 'object' ? data.features : null,
-        model: data.model || null,
-        fileName
-    };
-}
-
-function formatFileSize(bytes = 0) {
-    if (!bytes) return "Built-in";
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// --- Confidence Threshold (Settings → AI Core Configuration) -------------
-// Persisted in localStorage so the choice carries across sessions and is
-// read by Diagnostics to flag low-confidence AI predictions.
-const CONFIDENCE_THRESHOLD_KEY = 'ocu-confidence-threshold';
-const DEFAULT_CONFIDENCE_THRESHOLD = 85;
-function getConfidenceThreshold() {
-    try {
-        const stored = parseInt(localStorage.getItem(CONFIDENCE_THRESHOLD_KEY) || '', 10);
-        if (Number.isFinite(stored) && stored >= 50 && stored <= 99) return stored;
-    } catch (_) {}
-    return DEFAULT_CONFIDENCE_THRESHOLD;
-}
-function setConfidenceThreshold(value) {
-    try { localStorage.setItem(CONFIDENCE_THRESHOLD_KEY, String(value)); } catch (_) {}
-}
-
-// --- Mock Data ---
 const MOCK_USERS = [
     { username: "1", password: "1", type: "intern", name: "Fahmi" },
     { username: "doctor", password: "ocularxr", type: "doctor", name: "Dr. Julian Voss" },
     { username: "nurse", password: "nurs3", type: "nurse", name: "Nurse Meera Syed" }
 ];
-const MOCK_RECORDS = [
-    { id: 'OCU-H00001',   patient: "Siti Aminah",     age: 54, date: "2026-04-18", result: "Healthy",              confidence: "98.1%", doctor: "Nurse Meera Syed", severity: "Healthy"  },
-    { id: 'OCU-G00001',   patient: "Tan Wei",         age: 48, date: "2026-04-20", result: "Glaucoma",             confidence: "90.8%", doctor: "Dr. Julian Voss",  severity: "Critical" },
-    { id: 'OCU-AMD00001', patient: "Paul Garnier",    age: 72, date: "2026-04-24", result: "AMD",                  confidence: "91.6%", doctor: "Dr. Julian Voss",  severity: "Moderate" },
-    { id: 'OCU-DR00001',  patient: "Aliyah Rahman",   age: 59, date: "2026-04-26", result: "Diabetic Retinopathy", confidence: "82.0%", doctor: "Nurse Meera Syed", severity: "Critical" },
-    { id: 'OCU-H00002',   patient: "Sarah Miller",    age: 26, date: "2026-04-27", result: "Healthy",              confidence: "98.8%", doctor: "Dr. Julian Voss",  severity: "Healthy"  },
-    { id: 'OCU-G00002',   patient: "Marcus Chen",     age: 41, date: "2026-04-28", result: "Early Glaucoma",       confidence: "87.4%", doctor: "Dr. Julian Voss",  severity: "Moderate" },
-    { id: 'OCU-H00003',   patient: "Elena Rodriguez", age: 37, date: "2026-04-29", result: "Healthy",              confidence: "99.2%", doctor: "Dr. Julian Voss",  severity: "Healthy"  }
-];
-const MOCK_PATIENTS = [
-    { id: "P-1001", name: "Elena Rodriguez", age: 37, gender: "Female", last_scan: "2023-10-24" },
-    { id: "P-1002", name: "Marcus Chen", age: 41, gender: "Male", last_scan: "2023-10-23" },
-    { id: "P-1003", name: "Sarah Miller", age: 26, gender: "Female", last_scan: "2023-10-22" },
-    { id: "P-1004", name: "Aliyah Rahman", age: 59, gender: "Female", last_scan: "2023-11-02" },
-    { id: "P-1005", name: "Paul Garnier", age: 72, gender: "Male", last_scan: "2023-09-15" }
-];
-const MOCK_NOTIFICATIONS = [
-    { id: 1, message: "Critical Alert: Diabetic Retinopathy found.", time: "5m" },
-    { id: 2, message: "System: New version 4.3 deployed.", time: "2h" }
-];
-// Static colour palette for the daily-volume bar chart on Overview +
-// Insights. We cycle when the data has more bars than colours.
-const DAILY_BAR_COLORS = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#ef4444'];
-const WEEKDAY_LABELS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-// =========================================================================
-// Analytics derivations — single source of truth for Overview + Insights
-// =========================================================================
-// Every metric shown on either page is computed by one of the helpers
-// below. Components must NEVER recompute these inline; that way the two
-// pages can never drift out of sync.
-
-function _toYMD(input) {
-    if (!input) return '';
-    const dt = (input instanceof Date) ? input : new Date(input);
-    if (Number.isNaN(dt.getTime())) return '';
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+function Toast({ message, onClose }) {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 2300);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+    return (
+        <div className="fixed bottom-8 right-8 bg-white shadow-xl border border-slate-300 px-5 py-3 rounded-xl flex items-center gap-4 text-slate-800 toast-anim z-50">
+            <i className="fa-solid fa-circle-check text-emerald-600"></i>
+            <span className="font-medium">{message}</span>
+        </div>
+    );
 }
 
-function todayYMD() { return _toYMD(new Date()); }
-
-// Map any free-form `result` string to one of the 4 UI buckets.
-// Anything that doesn't match DR / Glaucoma / AMD is treated as Normal.
-function classifyResultBucket(result = '') {
-    const r = String(result).toLowerCase();
-    if (r.includes('diabetic') || r.includes('retinopathy') || /\bdr\b/.test(r)) return 'DR';
-    if (r.includes('glaucoma'))                                                  return 'Glaucoma';
-    if (r.includes('amd') || r.includes('macular'))                              return 'AMD';
-    return 'Normal';
-}
-
-function getRecentRecords(records, days) {
-    if (!Array.isArray(records) || records.length === 0) return [];
-    if (!days || days === 'all') return records;
-    const cutoff = new Date();
-    cutoff.setHours(0, 0, 0, 0);
-    cutoff.setDate(cutoff.getDate() - (days - 1));
-    return records.filter(r => {
-        const d = new Date(r.date);
-        return !Number.isNaN(d.getTime()) && d >= cutoff;
-    });
-}
-
-function caseDistribution(records) {
-    const buckets = { Normal: 0, DR: 0, Glaucoma: 0, AMD: 0 };
-    for (const r of records) buckets[classifyResultBucket(r.result)]++;
-    const total = records.length || 1;
-    return ['Normal','DR','Glaucoma','AMD'].map(key => ({
-        label: key,
-        count: buckets[key],
-        pct:   Math.round(buckets[key] * 100 / total)
-    }));
-}
-
-function dailyVolume(records, days = 7) {
-    const series = [];
-    const counts = {};
-    for (let i = days - 1; i >= 0; i--) {
-        const dt = new Date();
-        dt.setHours(0, 0, 0, 0);
-        dt.setDate(dt.getDate() - i);
-        const key = _toYMD(dt);
-        const label = WEEKDAY_LABELS_SHORT[dt.getDay()];
-        counts[key] = 0;
-        series.push({ key, label });
+function useToast() {
+    const [toast, setToast] = useState(null);
+    function triggerToast(msg) {
+        setToast(msg);
     }
-    for (const r of records) {
-        const k = _toYMD(r.date);
-        if (k in counts) counts[k]++;
+    function ToastComponent() {
+        return toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null;
     }
-    return series.map(s => ({ ...s, count: counts[s.key] || 0 }));
+    return [ToastComponent, triggerToast];
 }
 
-function weeklyVolume(records, weeks = 4) {
-    const buckets = [];
-    for (let i = weeks - 1; i >= 0; i--) {
-        const end = new Date();
-        end.setHours(0, 0, 0, 0);
-        end.setDate(end.getDate() - i * 7);
-        const start = new Date(end);
-        start.setDate(start.getDate() - 6);
-        buckets.push({ label: `Wk ${weeks - i}`, start, end, count: 0 });
-    }
-    for (const r of records) {
-        const d = new Date(r.date);
-        if (Number.isNaN(d.getTime())) continue;
-        for (const b of buckets) {
-            if (d >= b.start && d <= b.end) { b.count++; break; }
-        }
-    }
-    return buckets.map(b => ({ label: b.label, count: b.count }));
-}
-
-// Ophthalmic-epidemiology age bins (20-year groups).
-function ageGroupBuckets(records) {
-    const bins = [
-        { label: '0-19',  min: 0,  max: 19,  count: 0 },
-        { label: '20-39', min: 20, max: 39,  count: 0 },
-        { label: '40-59', min: 40, max: 59,  count: 0 },
-        { label: '60-79', min: 60, max: 79,  count: 0 },
-        { label: '80+',   min: 80, max: 200, count: 0 }
+const Sidebar = ({ currentView, setView, onLogout, user }) => {
+    const menuItems = [
+        { id: 'dashboard', label: 'Overview', icon: 'fa-grid-2' },
+        { id: 'screening', label: 'Diagnostics', icon: 'fa-microscope' },
+        { id: 'records', label: 'Patient Registry', icon: 'fa-folder-open' },
+        { id: 'analytics', label: 'Insights', icon: 'fa-chart-line' },
+        { id: 'settings', label: 'Settings', icon: 'fa-sliders' },
     ];
-    for (const r of records) {
-        const age = Number(r.age);
-        if (!Number.isFinite(age) || age < 0) continue;
-        for (const b of bins) {
-            if (age >= b.min && age <= b.max) { b.count++; break; }
+    return (
+        <aside className="w-72 glass-sidebar h-screen fixed left-0 top-0 flex flex-col p-8 z-20">
+            <div className="mb-12 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-sm border border-slate-100">
+                    <img src="Calisto Logo.png" alt="Calisto" className="w-full h-full object-contain" />
+                </div>
+                <span className="text-xl font-bold tracking-tight text-[#1a1a1e] cursor-pointer" onClick={() => setView('dashboard')}>OCUVISION</span>
+            </div>
+            <nav className="flex-1 space-y-2">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-bold mb-4 ml-2">Platform</p>
+                {menuItems.map(item => (
+                    <button
+                        key={item.id}
+                        onClick={() => setView(item.id)}
+                        className={`nav-link w-full flex items-center gap-4 px-4 py-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 ${currentView === item.id ? 'active text-slate-900 bg-slate-50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'}`}
+                    >
+                        <i className={`fa-solid ${item.icon} w-5`}></i>
+                        {item.label}
+                    </button>
+                ))}
+            </nav>
+            <div className="mt-auto pt-8 border-t border-slate-100">
+                <div className="flex items-center gap-3 p-2">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                        <div className="text-slate-500 font-bold text-sm">{(user?.name || "U").charAt(0).toUpperCase()}</div>
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                        <p className="text-sm font-semibold truncate">{user?.name || "Clinician"}</p>
+                        <p className="text-xs text-slate-400 truncate">{user?.type || "User"}</p>
+                    </div>
+                    <button className="text-slate-400 hover:text-red-500 transition-colors" onClick={onLogout}>
+                        <i className="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+    );
+};
+
+function LoginForm({ onLogin }) {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+
+    function handleSubmit(e) {
+        e.preventDefault();
+        const user = MOCK_USERS.find(u => u.username === username && u.password === password);
+        if (user) {
+            onLogin(user);
+        } else {
+            setError('Invalid credentials');
         }
     }
-    return bins;
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+            <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors font-semibold">Login</button>
+        </form>
+    );
 }
 
-function ageGroupPeak(records) {
-    const bins = ageGroupBuckets(records);
-    let best = bins[0];
-    for (const b of bins) if (b.count > best.count) best = b;
-    return { peak: best, bins };
+function App() {
+    const [currentView, setView] = useState('dashboard');
+    const [user, setUser] = useState(null);
+    const [ToastComponent, triggerToast] = useToast();
+
+    useEffect(() => {
+        const storedUser = localStorage.getItem('ocuvision-user');
+        if (storedUser) {
+            try {
+                setUser(JSON.parse(storedUser));
+            } catch (e) {}
+        }
+    }, []);
+
+    if (!user) {
+        return (
+            <div className="auth-shell w-full h-screen flex items-center justify-center">
+                <div className="calisto-card p-8 max-w-md w-full">
+                    <div className="text-center mb-6">
+                        <h1 className="text-3xl font-bold mb-2">OcuVision AI</h1>
+                        <p className="text-slate-500">Premium Ophthalmic Intelligence</p>
+                    </div>
+                    <LoginForm onLogin={(u) => { setUser(u); localStorage.setItem('ocuvision-user', JSON.stringify(u)); }} />
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="app-shell flex">
+            <Sidebar currentView={currentView} setView={setView} onLogout={() => { setUser(null); localStorage.removeItem('ocuvision-user'); }} user={user} />
+            <main className="flex-1 ml-72 p-8">
+                <div className="mb-6">
+                    <h1 className="text-4xl font-bold">Welcome to OcuVision AI</h1>
+                    <p className="text-slate-500">Powered by advanced AI diagnostics</p>
+                </div>
+                <div className="calisto-card p-6">
+                    <p className="text-slate-600">Select a section from the sidebar to get started.</p>
+                </div>
+                <ToastComponent />
+            </main>
+        </div>
+    );
 }
 
-function isCriticalRecord(r) {
-    const sev = String(r?.severity || '').toLowerCase();
-    const res = String(r?.result   || '').toLowerCase();
-    if (sev === 'critical') return true;
-    if (res.includes('diabetic') || res.includes('retinopathy')) return true;
-    if (res.includes('glaucoma') && !res.includes('early')) return true;
-    return false;
-}
-
-function criticalCount(records) {
-    return records.filter(isCriticalRecord).length;
-}
-
-// Aggregate the Male / Female / Other counts across the supplied records,
-// returning percentages alongside raw counts so the pie chart can render
-// the slice arcs without redoing the math. "Other" lumps together any
-// gender value the registry produces that isn't a clean male/female
-// string ("Non-binary", missing, "Prefer not to say", …) so the chart
-// stays accurate without losing any patients.
-//
-// The registry stores patient details inline on every screening record,
-// so a single patient with 3 screenings appears as 3 rows with the same
-// name/age/gender. We deduplicate on a `${name}|${age}` key so the pie
-// chart counts UNIQUE PATIENTS rather than records — otherwise a busy
-// patient could single-handedly skew the demographic split, and the
-// "24 PATIENTS" label in the donut centre would be a lie (it would
-// really be "24 records").
-function genderDistribution(records) {
-    const buckets = { male: 0, female: 0, other: 0 };
-    const seen = new Set();
-    (records || []).forEach(r => {
-        const name = String(r.patient || '').trim().toLowerCase();
-        const age  = String(r.age ?? '').trim();
-        const key  = name ? `${name}|${age}` : `__row_${seen.size}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        const g = String(r.gender || '').trim().toLowerCase();
-        if (g === 'male' || g === 'm') buckets.male += 1;
-        else if (g === 'female' || g === 'f') buckets.female += 1;
-        else if (g) buckets.other += 1;
-    });
-    const total = buckets.male + buckets.female + buckets.other;
-    const pct = n => total > 0 ? Math.round((n / total) * 100) : 0;
-    return {
-        total,
-        male:   { count: buckets.male,   pct: pct(buckets.male)   },
-        female: { count: buckets.female, pct: pct(buckets.female) },
-        other:  { count: buckets.other,  pct: pct(buckets.other)  },
-    };
-}
-
-function reviewedPerDay(records, days = 7) {
-    const series = dailyVolume(records, days);
-    const total  = series.reduce((s, o) => s + o.count, 0);
-    const todayCount = series.length ? series[series.length - 1].count : 0;
-    const avg = days > 0 ? total / days : 0;
-    return { todayCount, total, avg, series };
-}
-
-function todayScreeningCount(records) {
-    const today = todayYMD();
-    return (records || []).filter(r => _toYMD(r.date) === today).length;
-}
-
-// [Rest of the React app code continues identically...]
-// Please paste the remainder of the JavaScript code from the original file here
-// The structure above optimizes CDN loading without changing the app logic
-
-console.log('OcuVision AI loaded. CDN optimization complete.');
+ReactDOM.render(<App />, document.getElementById('root'));
 </script>
 </body>
 </html>
