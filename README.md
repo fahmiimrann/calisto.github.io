@@ -159,7 +159,8 @@ Verify the backend at **http://localhost:3000/api/health**.
 
 ## ☁️ Deployment
 
-A complete, step-by-step production guide — building the licence-free MATLAB executable, provisioning a cloud VM, installing the MATLAB Runtime, and fronting it with a Cloudflare Tunnel — lives in **[`DEPLOYMENT.md`](./DEPLOYMENT.md)**.
+- **Frontend:** published automatically to **GitHub Pages** at the live URL above on every push to `main`.
+- **Backend:** the Node + AI server runs on a separate always-on host (cloud VM / lab PC). The live frontend reaches it via the `TUNNEL_API_BASE_URL` value in `index.html`; when that's blank, the site falls back to the demo backend so it always works.
 
 ---
 
@@ -171,10 +172,9 @@ calisto.github.io/
 ├── server.js             # Express API + static file server
 ├── matlab-runner.js      # MATLAB / compiled-exe inference bridge
 ├── python-runner.js      # Python CNN inference bridge
-├── db.js                 # Supabase / local-JSON data layer
+├── db.js                 # Supabase / MySQL / local-JSON data layer
 ├── Calisto Logo.png      # Branding
 ├── Background_Video.mp4  # Login backdrop
-├── DEPLOYMENT.md         # Production deployment guide
 └── package.json
 ```
 
