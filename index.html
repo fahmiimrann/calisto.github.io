@@ -390,12 +390,11 @@ const { useState, useEffect, useRef, useMemo } = React;
 const REMOTE_API_BASE_URL = "https://ocuvision-backend.onrender.com";
 
 // Public backend for non-localhost visitors (GitHub Pages, etc.).
-//   - Blank  -> falls back to REMOTE_API_BASE_URL (the Render DEMO backend),
-//               so the live site is a fully working demo without MATLAB.
-//   - Later, to serve the REAL Python CNN from the calisto.co server, set:
-//               const TUNNEL_API_BASE_URL = "https://myvision-dev.calisto.co";
-//     (only after that backend is deployed and verified live).
-const TUNNEL_API_BASE_URL = "";
+//   - Points at the real OcuVision backend on the calisto.co server, which runs
+//     the End-to-End ResNet50 CNN (Python) and uses the shared MySQL database.
+//   - To temporarily fall back to the Render DEMO backend (no real AI), set this
+//     to "" (blank) -> falls back to REMOTE_API_BASE_URL.
+const TUNNEL_API_BASE_URL = "https://myvision-dev.calisto.co";
 
 function resolveApiBaseUrl() {
     try {
