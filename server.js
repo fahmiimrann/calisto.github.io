@@ -12,8 +12,21 @@ const { runMatlabModel, isMatlabModelFile, isMatlabAvailable, MATLAB_EXEC, COMPI
 const { runPythonModel, isPythonEngineType, engineFromType, PYTHON_EXEC, MODELS_DIR: PY_MODELS_DIR } = require('./python-runner');
 
 const app = express();
+// Behind nginx + Cloudflare: trust the proxy chain so req.ip / req.protocol
+// reflect the real client (needed for correct rate-limiting and HTTPS detection).
+app.set('trust proxy', true);
+app.disable('x-powered-by');
 const PORT = process.env.PORT || 3000;
-const upload = multer({ storage: multer.memoryStorage() });
+
+// Fundus image uploads: in-memory, capped at 15 MB, images only.
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+    fileFilter(_req, file, cb) {
+        if (/^image\//.test(file.mimetype)) return cb(null, true);
+        cb(new Error('Only image files are accepted.'));
+    }
+});
 
 // --- Storage paths (model registry only — user/record data lives in db.js) ---
 const MODEL_DIR = path.join(__dirname, 'uploaded-models');
@@ -51,6 +64,69 @@ const BUILTIN_PYTHON_MODELS = [
 function generateToken() {
     return crypto.randomBytes(32).toString('hex');
 }
+
+// --- Password hashing (scrypt; Node built-in, no native deps) --------------
+// Stored format:  scrypt$<saltHex>$<hashHex>
+function hashPassword(plain) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(String(plain), salt, 64).toString('hex');
+    return `scrypt$${salt}$${hash}`;
+}
+
+function isHashed(stored) {
+    return typeof stored === 'string' && stored.startsWith('scrypt$');
+}
+
+function verifyPassword(plain, stored) {
+    if (typeof stored !== 'string' || !stored) return false;
+    // Legacy plaintext rows (pre-hashing seed data) still authenticate, then
+    // get upgraded to a hash on the next successful login.
+    if (!isHashed(stored)) return String(plain) === stored;
+    const [, salt, hash] = stored.split('$');
+    try {
+        const expected = Buffer.from(hash, 'hex');
+        const actual = crypto.scryptSync(String(plain), salt, expected.length);
+        return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+    } catch {
+        return false;
+    }
+}
+
+// Transparently re-hash a legacy plaintext password the first time the user
+// authenticates, so the database upgrades itself without locking anyone out.
+async function upgradePasswordIfLegacy(user, plain) {
+    if (user && !isHashed(user.password)) {
+        try { await db.patchUser(user.id, { password: hashPassword(plain) }); }
+        catch (e) { console.warn('[auth] password upgrade failed:', e.message); }
+    }
+}
+
+// --- Simple in-memory per-IP rate limiter (no external dependency) ----------
+function rateLimit({ windowMs, max, message }) {
+    const hits = new Map();
+    return (req, res, next) => {
+        const now = Date.now();
+        const key = req.ip || 'unknown';
+        let rec = hits.get(key);
+        if (!rec || now > rec.reset) rec = { count: 0, reset: now + windowMs };
+        rec.count += 1;
+        hits.set(key, rec);
+        if (hits.size > 5000) {
+            for (const [k, v] of hits) if (now > v.reset) hits.delete(k);
+        }
+        if (rec.count > max) {
+            res.setHeader('Retry-After', String(Math.ceil((rec.reset - now) / 1000)));
+            return res.status(429).json({ error: message || 'Too many requests. Please try again later.' });
+        }
+        next();
+    };
+}
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: 'Too many attempts. Please wait a few minutes and try again.'
+});
 
 function publicUser(user) {
     if (!user) return null;
@@ -148,8 +224,32 @@ const allowedOrigins = [
     'https://fahmiimrann.github.io',
     'https://fahmiimrann.github.io/calisto.github.io',
     'https://fahmimrann.github.io',
-    'https://fahmimrann.github.io/calisto.github.io' // Your live frontend
+    'https://fahmimrann.github.io/calisto.github.io', // Your live frontend
+    // calisto.co production server (Ubuntu/EC2): the static frontend is served
+    // from myvision.calisto.co and calls this backend on myvision-dev.calisto.co.
+    'https://myvision.calisto.co',
+    'https://myvision-dev.calisto.co'
 ];
+
+// Allow extra origins from the environment (comma-separated) without code
+// changes — handy when the deployment domain changes.
+if (process.env.EXTRA_CORS_ORIGINS) {
+    for (const o of process.env.EXTRA_CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)) {
+        if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
+    }
+}
+
+// Baseline security headers. Kept deliberately minimal (no strict CSP) so the
+// CDN-driven React/Babel/Tailwind SPA keeps loading; HTTPS is terminated by
+// Cloudflare upstream, and HSTS reinforces it.
+app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+});
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -218,7 +318,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Login: validates against persisted users and issues a session token.
-app.post('/api/login', async (req, res, next) => {
+app.post('/api/login', authLimiter, async (req, res, next) => {
     try {
         const { username, password } = req.body || {};
         if (!username || !password) {
@@ -226,9 +326,10 @@ app.post('/api/login', async (req, res, next) => {
         }
 
         const user = await db.findUserByUsername(username);
-        if (!user || user.password !== password) {
+        if (!user || !verifyPassword(password, user.password)) {
             return res.status(401).json({ error: 'Invalid username or password.' });
         }
+        await upgradePasswordIfLegacy(user, password);
 
         const token = generateToken();
         const updated = await db.setUserToken(user.id, token);
@@ -239,11 +340,14 @@ app.post('/api/login', async (req, res, next) => {
 });
 
 // Register: persists the new user and issues a session token.
-app.post('/api/register', async (req, res, next) => {
+app.post('/api/register', authLimiter, async (req, res, next) => {
     try {
         const { username, name, type, password, email } = req.body || {};
         if (!username || !name || !type || !password) {
             return res.status(400).json({ error: 'Name, username, password, and type are required.' });
+        }
+        if (String(password).length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters.' });
         }
 
         const existing = await db.findUserByUsername(username);
@@ -253,7 +357,7 @@ app.post('/api/register', async (req, res, next) => {
         const user = {
             id: `u-${Date.now()}`,
             username,
-            password,
+            password: hashPassword(password),
             name,
             type,
             email: email || `${username}@calisto.com`,
@@ -282,7 +386,7 @@ app.post('/api/logout', requireAuth, async (req, res, next) => {
 app.post('/api/auth/verify', requireAuth, (req, res) => {
     const { password } = req.body || {};
     if (!password) return res.status(400).json({ error: 'Password is required.' });
-    if (req.user.password !== password) {
+    if (!verifyPassword(password, req.user.password)) {
         return res.status(401).json({ error: 'Incorrect password.' });
     }
     res.json({ ok: true });
@@ -325,14 +429,14 @@ app.post('/api/users/me/password', requireAuth, async (req, res, next) => {
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ error: 'Current and new password are required.' });
         }
-        if (req.user.password !== currentPassword) {
+        if (!verifyPassword(currentPassword, req.user.password)) {
             return res.status(401).json({ error: 'Current password is incorrect.' });
         }
-        if (newPassword.length < 4) {
-            return res.status(400).json({ error: 'New password must be at least 4 characters.' });
+        if (String(newPassword).length < 8) {
+            return res.status(400).json({ error: 'New password must be at least 8 characters.' });
         }
 
-        await db.patchUser(req.user.id, { password: newPassword });
+        await db.patchUser(req.user.id, { password: hashPassword(newPassword) });
         res.json({ ok: true });
     } catch (err) {
         next(err);
@@ -719,7 +823,7 @@ app.post('/api/records', requireAuth, async (req, res, next) => {
 app.patch('/api/records/:id', requireAuth, async (req, res, next) => {
     try {
         const { password, ...changes } = req.body || {};
-        if (!password || password !== req.user.password) {
+        if (!password || !verifyPassword(password, req.user.password)) {
             return res.status(401).json({ error: 'Password verification failed.' });
         }
 
@@ -746,7 +850,7 @@ app.patch('/api/records/:id', requireAuth, async (req, res, next) => {
 app.delete('/api/records/:id', requireAuth, async (req, res, next) => {
     try {
         const password = req.body?.password || req.headers['x-reauth-password'];
-        if (!password || password !== req.user.password) {
+        if (!password || !verifyPassword(password, req.user.password)) {
             return res.status(401).json({ error: 'Password verification failed.' });
         }
 
@@ -760,8 +864,15 @@ app.delete('/api/records/:id', requireAuth, async (req, res, next) => {
 
 // Centralised error handler so async failures show as JSON instead of HTML.
 app.use((err, _req, res, _next) => {
+    const msg = err && err.message ? err.message : 'Internal server error.';
+    if (err instanceof multer.MulterError) {
+        const m = err.code === 'LIMIT_FILE_SIZE' ? 'Image too large (max 15 MB).' : msg;
+        return res.status(400).json({ error: m });
+    }
+    if (/Only image files/.test(msg)) return res.status(400).json({ error: msg });
+    if (/CORS policy/.test(msg)) return res.status(403).json({ error: msg });
     console.error('[server] error', err);
-    res.status(500).json({ error: err.message || 'Internal server error.' });
+    res.status(500).json({ error: msg });
 });
 
 db.init().then(() => {

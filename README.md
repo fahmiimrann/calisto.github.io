@@ -11,13 +11,14 @@
 
 ### Premium Ophthalmic Intelligence — AI-powered retinal fundus screening in your browser
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-Open_App-244C3E?style=for-the-badge&logo=githubpages&logoColor=white)](https://fahmiimrann.github.io/calisto.github.io/)
+[![Live App](https://img.shields.io/badge/Live_App-Open-244C3E?style=for-the-badge&logo=githubpages&logoColor=white)](https://fahmiimrann.github.io/calisto.github.io/)
 [![GitHub Pages](https://img.shields.io/badge/Hosted_on-GitHub_Pages-222?style=for-the-badge&logo=github)](https://fahmiimrann.github.io/calisto.github.io/)
 
 ![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)
 ![Frontend](https://img.shields.io/badge/Frontend-React_18_+_Tailwind-38BDF8?logo=react&logoColor=white)
-![AI Engine](https://img.shields.io/badge/AI-MATLAB_+_Python_CNN-EE6E2C?logo=mathworks&logoColor=white)
-![Storage](https://img.shields.io/badge/Storage-Supabase_/_JSON-3ECF8E?logo=supabase&logoColor=white)
+![AI Engine](https://img.shields.io/badge/AI-Python_ResNet50_CNN-EE4C2C?logo=pytorch&logoColor=white)
+![Storage](https://img.shields.io/badge/Storage-MySQL-4479A1?logo=mysql&logoColor=white)
+![Backend](https://img.shields.io/badge/Backend-EC2_·_Nginx_·_PM2_·_Cloudflare-FF9900?logo=amazonaws&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 </div>
@@ -26,11 +27,11 @@
 
 ## Overview
 
-**Calisto (OcuVision AI)** is a modern, web-based clinical screening tool that analyzes **retinal fundus images** and flags signs of common eye diseases. It pairs a polished, glassmorphic single-page dashboard with a real AI inference backend — supporting both a **MATLAB Bagged Trees** classifier and a **Python ResNet50 CNN**, with a built-in demo mode so the site stays usable anywhere.
+**Calisto (OcuVision AI)** is a production, web-based screening platform that analyzes **retinal fundus images** and flags signs of common eye diseases in seconds. It pairs a polished, glassmorphic single-page dashboard with a real AI inference backend.
 
-The frontend runs entirely client-side on GitHub Pages; when connected to the OcuVision backend it performs genuine feature extraction (GLCM texture, intensity statistics, vessel morphology, optic-nerve-head cup-to-disc ratio) and disease classification.
+The **live deployment** runs the **Python End-to-End ResNet50 CNN** on an always-on cloud server (AWS EC2 → Nginx → PM2-managed Node.js, behind Cloudflare HTTPS), backed by a shared **MySQL** database. The same codebase can also run a **MATLAB Bagged Trees** classifier locally, and ships with a deterministic demo engine as a graceful fallback. Each scan returns genuine feature extraction (GLCM texture, intensity statistics, vessel morphology, optic-nerve-head cup-to-disc ratio) alongside the disease classification.
 
-> ⚠️ **Disclaimer:** Calisto is a research / integrated-design-project prototype and is **not** a certified medical device. It is intended to assist screening workflows, not to replace a qualified ophthalmologist's diagnosis.
+> ⚠️ **Medical disclaimer:** Calisto is a decision-support and screening aid, **not** a certified or regulatory-cleared medical device. It must not be used as the sole basis for diagnosis or treatment. All findings require confirmation by a qualified ophthalmologist.
 
 <div align="center">
 
@@ -69,9 +70,9 @@ Calisto can route each scan to one of three interchangeable engines:
 
 | Engine | Type | Notes |
 |---|---|---|
-| **MATLAB Bagged Trees** | `99_BaggedTreesModel.mat` | Full feature pipeline; runs via MATLAB or a licence-free compiled `.exe` + MATLAB Runtime. |
-| **Python ResNet50 CNN** | `python_predict.py --engine cnn` | End-to-end deep-learning classifier. |
-| **Demo Retina Core** | built-in | Deterministic baseline used as a fallback when no inference runtime is present — keeps the public site fully interactive. |
+| **Python ResNet50 CNN** ⭐ | `python_predict.py --engine cnn` | End-to-end deep-learning classifier — **the engine running in production**. |
+| **MATLAB Bagged Trees** | `99_BaggedTreesModel.mat` | Full feature pipeline; runs via MATLAB or a licence-free compiled `.exe` + MATLAB Runtime (local environments). |
+| **Demo Retina Core** | built-in | Deterministic baseline used as a fallback when no inference runtime is reachable — keeps the public site fully interactive. |
 
 ---
 
@@ -79,15 +80,17 @@ Calisto can route each scan to one of three interchangeable engines:
 
 ```mermaid
 flowchart LR
-    A[Browser SPA<br/>React + Tailwind<br/>GitHub Pages] -->|HTTPS / API| B[Node.js + Express<br/>server.js]
+    A[Browser SPA<br/>React + Tailwind<br/>GitHub Pages] -->|HTTPS| CF[Cloudflare<br/>TLS + CDN]
+    CF --> NX[Nginx<br/>reverse proxy]
+    NX --> B[Node.js + Express<br/>PM2 · server.js]
     B --> C{Active Engine}
-    C -->|.mat / .exe| D[MATLAB / MATLAB Runtime]
-    C -->|python| E[Python ResNet50 CNN]
+    C -->|python| E[Python ResNet50 CNN<br/>PyTorch CPU]
+    C -->|.mat / .exe| D[MATLAB / Runtime<br/>local only]
     C -->|fallback| F[Demo Retina Core]
-    B --> G[(Supabase<br/>or local JSON)]
+    B --> G[(MySQL<br/>users + records)]
 ```
 
-The browser app talks to the backend through `API_BASE_URL`. When no backend is reachable, it gracefully degrades to demo mode so the GitHub Pages site always works.
+The browser app talks to the backend through `API_BASE_URL`. In production it reaches the live CNN backend; if that backend is unreachable it gracefully degrades to the demo engine, so the GitHub Pages site always loads.
 
 ---
 
@@ -95,16 +98,34 @@ The browser app talks to the backend through `API_BASE_URL`. When no backend is 
 
 - **Frontend:** React 18 (via Babel standalone), Tailwind CSS, Chart.js, Font Awesome, Plus Jakarta Sans
 - **Backend:** Node.js, Express, Multer (uploads), CORS, dotenv
-- **AI:** MATLAB (Bagged Trees) / MATLAB Compiler Runtime, Python (ResNet50 CNN)
-- **Data:** Supabase (recommended) or local JSON files (`data/users.json`, `data/records.json`)
-- **Hosting:** GitHub Pages (frontend) + cloud VM / Cloudflare Tunnel (backend)
+- **AI:** Python (ResNet50 CNN, PyTorch) in production · MATLAB Bagged Trees / Compiler Runtime for local runs
+- **Data:** MySQL (production single source of truth) · Supabase or local JSON supported as alternatives
+- **Infrastructure:** AWS EC2 (Ubuntu) · Nginx reverse proxy · PM2 process manager · Cloudflare (TLS/CDN)
+- **Hosting:** GitHub Pages (frontend) + EC2 (backend API)
+
+---
+
+## 🔒 Security
+
+Production hardening built into the backend:
+
+| Area | Measure |
+|---|---|
+| Passwords | Hashed with **scrypt** (salted, constant-time compare); never stored or returned in plaintext. Legacy records auto-upgrade on next login. |
+| Transport | **HTTPS everywhere** via Cloudflare TLS + **HSTS**; backend trusts the proxy chain for correct client IPs. |
+| Brute force | **Rate limiting** on `/api/login` and `/api/register` (per-IP). |
+| Headers | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`; `X-Powered-By` disabled. |
+| Uploads | Image-only filter, **15 MB** size cap, single-file, in-memory (no disk persistence of raw uploads beyond transient inference). |
+| Access control | Bearer-token sessions; destructive record actions require password re-verification. |
+| CORS | Strict allow-list of trusted origins (configurable via `EXTRA_CORS_ORIGINS`). |
+| Secrets | Credentials kept in a git-ignored `.env`; database reachable only over localhost / SSH tunnel. |
 
 ---
 
 ## 🚀 Getting Started (Local)
 
 ### Use the live app
-No installation required — just open **[the live site](https://fahmiimrann.github.io/calisto.github.io/)**. It runs in demo mode out of the box.
+No installation required — just open **[the live site](https://fahmiimrann.github.io/calisto.github.io/)**. It connects to the production backend and runs the real **Python ResNet50 CNN** (first scan after an idle period takes ~25–30 s while the model warms up on CPU).
 
 ### Run locally with the AI backend
 
@@ -130,16 +151,34 @@ Then open **http://localhost:3000** to use the site against your local backend.
 ```env
 PORT=3000
 
-# Storage — Supabase recommended for shared multi-user data
-SUPABASE_URL=https://yourproject.supabase.co
-SUPABASE_SERVICE_KEY=your-service-key
+# Storage — choose ONE backend:
+# (a) MySQL (production single source of truth)
+DB_BACKEND=mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=myvision-db
+MYSQL_PASSWORD=your-password
+MYSQL_DATABASE=myvision-db
 
-# AI runtime (pick one path)
-# Licence-free compiled MATLAB executable:
+# (b) Supabase
+# SUPABASE_URL=https://yourproject.supabase.co
+# SUPABASE_SERVICE_KEY=your-service-key
+# (c) Local JSON files (default if neither above is set)
+
+# AI runtime
+# Python CNN (production): point to the venv interpreter + models dir
+# OCU_PYTHON_EXEC=/path/to/python/.venv/bin/python
+# OCU_MODELS_DIR=/path/to/models
+# …or MATLAB locally (licence-free compiled exe, or full MATLAB):
 # OCU_COMPILED_EXE=C:\path\to\dist\ocu_main.exe
-# …or full MATLAB:
 # MATLAB_EXEC=C:\Program Files\MATLAB\R2025b\bin\matlab.exe
+
+# Extra CORS origins (comma-separated), e.g. your GitHub Pages URL
+# EXTRA_CORS_ORIGINS=https://fahmiimrann.github.io
 ```
+
+> To develop locally against the shared production MySQL, open an SSH tunnel to the
+> database first (e.g. `db-tunnel.ps1`) so it stays the single source of truth.
 
 Verify the backend at **http://localhost:3000/api/health**.
 
@@ -159,8 +198,13 @@ Verify the backend at **http://localhost:3000/api/health**.
 
 ## ☁️ Deployment
 
-- **Frontend:** published automatically to **GitHub Pages** at the live URL above on every push to `main`.
-- **Backend:** the Node + AI server runs on a separate always-on host (cloud VM / lab PC). The live frontend reaches it via the `TUNNEL_API_BASE_URL` value in `index.html`; when that's blank, the site falls back to the demo backend so it always works.
+- **Frontend:** published automatically to **GitHub Pages** at the live URL above on every push to `main`. The live site points at the production backend via `TUNNEL_API_BASE_URL` in `index.html`; if that's blank or unreachable, it falls back to the demo backend so the page always works.
+- **Backend:** runs on **AWS EC2 (Ubuntu)** as an always-on service:
+  - **Nginx** reverse-proxies the API domain to the Node app.
+  - **PM2** keeps `server.js` alive and restarts it on boot.
+  - **Cloudflare** terminates TLS and fronts the domain (HTTPS + CDN).
+  - **Python venv (PyTorch, CPU)** serves the ResNet50 CNN; a swap file covers the model's peak memory on small instances.
+  - **MySQL** stores users and patient records (schema auto-creates and seeds on first boot).
 
 ---
 
@@ -172,7 +216,10 @@ calisto.github.io/
 ├── server.js             # Express API + static file server
 ├── matlab-runner.js      # MATLAB / compiled-exe inference bridge
 ├── python-runner.js      # Python CNN inference bridge
-├── db.js                 # Supabase / MySQL / local-JSON data layer
+├── db.js                 # MySQL / Supabase / local-JSON data layer
+├── python/               # Inference + training scripts (ResNet50, U-Net, features)
+├── models/               # Trained weights (.pth / .pkl) — gitignored
+├── db-tunnel.ps1         # Opens an SSH tunnel to the shared MySQL for local dev
 ├── Calisto Logo.png      # Branding
 ├── Background_Video.mp4  # Login backdrop
 └── package.json
