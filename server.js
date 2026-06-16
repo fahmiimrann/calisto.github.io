@@ -759,7 +759,7 @@ async function nextRecordId(result, severity) {
 }
 
 function normalizeRecordPayload(body = {}) {
-    const allowed = ['patient', 'age', 'gender', 'date', 'result', 'confidence', 'doctor', 'severity', 'fundus_image', 'features'];
+    const allowed = ['patient', 'nric', 'age', 'gender', 'date', 'result', 'confidence', 'doctor', 'severity', 'fundus_image', 'features'];
     const record = {};
     for (const key of allowed) {
         if (body[key] !== undefined) record[key] = body[key];
@@ -773,6 +773,7 @@ function normalizeRecordPayload(body = {}) {
     }
     if (typeof record.patient === 'string') record.patient = record.patient.trim();
     if (typeof record.doctor === 'string')  record.doctor  = record.doctor.trim();
+    if (typeof record.nric === 'string')    record.nric    = record.nric.trim() || null;
     return { record };
 }
 

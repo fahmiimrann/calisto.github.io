@@ -1407,6 +1407,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         const diagnosisLabel = (scanResult.diagnosis || 'Healthy').replace(/^Detection Result:\s*/i, '');
         const newRecord = {
             patient: details.patient,
+            nric: details.nric || null,
             age: details.age,
             gender: details.gender,
             date: today,
@@ -2902,6 +2903,7 @@ function PasswordPrompt({ open, title, description, expectedPassword, onVerify, 
 function PatientDetailsForm({ open, mode = 'create', initial, recordIdHint, onCancel, onSubmit }) {
     const [form, setForm] = useState({
         patient: '',
+        nric: '',
         age: '',
         gender: 'Female',
         doctor: ''
@@ -2911,6 +2913,7 @@ function PatientDetailsForm({ open, mode = 'create', initial, recordIdHint, onCa
         if (!open) return;
         setForm({
             patient: initial?.patient || '',
+            nric: initial?.nric || '',
             age: initial?.age != null ? String(initial.age) : '',
             gender: initial?.gender || 'Female',
             doctor: initial?.doctor || ''
@@ -2928,6 +2931,7 @@ function PatientDetailsForm({ open, mode = 'create', initial, recordIdHint, onCa
         if (!form.patient.trim() || !form.age) return;
         onSubmit({
             patient: form.patient.trim(),
+            nric: form.nric.trim(),
             age: Number(form.age),
             gender: form.gender,
             doctor: form.doctor.trim() || 'Unassigned'
@@ -2967,6 +2971,17 @@ function PatientDetailsForm({ open, mode = 'create', initial, recordIdHint, onCa
                             required
                             value={form.patient}
                             onChange={e => update('patient', e.target.value)}
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                        />
+                    </div>
+                    <div className="sm:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">NRIC / Passport No.</label>
+                        <input
+                            type="text"
+                            value={form.nric}
+                            onChange={e => update('nric', e.target.value)}
+                            placeholder="e.g. 900101-14-5678"
                             className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
                             autoComplete="off"
                         />
@@ -3450,7 +3465,54 @@ function buildInterpretation(record, f) {
             `Severity classification: ${record.severity}.`,
         ];
     }
-    return { summary, findings, validation, risk };
+
+    // Referral guidance: what happens next, where to go, and who to see.
+    let referral;
+    if (cond.includes('healthy')) {
+        referral = {
+            to: 'Optometrist',
+            where: 'community / hospital eye clinic',
+            next: 'No urgent referral required — continue routine annual fundus screening.',
+            urgency: 'Routine'
+        };
+    } else if (cond.includes('early glaucoma')) {
+        referral = {
+            to: 'Ophthalmologist (Glaucoma clinic)',
+            where: 'ophthalmology outpatient / glaucoma clinic',
+            next: 'Refer for optic-nerve OCT and visual field testing to confirm; review in 3 - 6 months.',
+            urgency: 'Soon · 3 - 6 months'
+        };
+    } else if (cond.includes('glaucoma')) {
+        referral = {
+            to: 'Ophthalmologist (Glaucoma specialist)',
+            where: 'ophthalmology / glaucoma clinic',
+            next: 'Urgent referral for IOP assessment, visual field testing and OCT to confirm glaucoma.',
+            urgency: 'Urgent · 1 - 2 weeks'
+        };
+    } else if (cond.includes('diabetic') || cond.includes('retinopathy')) {
+        referral = {
+            to: 'Ophthalmologist (Medical Retina)',
+            where: 'retina / vitreoretinal clinic',
+            next: "Refer for a dilated retinal exam, with possible laser / anti-VEGF; coordinate HbA1c and diabetic review with the patient's physician.",
+            urgency: 'Urgent · 1 - 2 weeks'
+        };
+    } else if (cond.includes('amd')) {
+        referral = {
+            to: 'Ophthalmologist (Medical Retina)',
+            where: 'retina / macula clinic',
+            next: 'Refer for macular OCT; advise AREDS2 supplementation review and Amsler-grid self-monitoring.',
+            urgency: 'Soon · within weeks'
+        };
+    } else {
+        referral = {
+            to: 'Ophthalmologist',
+            where: 'ophthalmology outpatient clinic',
+            next: 'Refer for manual review and confirmatory testing.',
+            urgency: 'Recommended'
+        };
+    }
+
+    return { summary, findings, validation, risk, referral };
 }
 
 // --- Stylized fundus SVG matching combined.py 2x2 plot grid ---
@@ -3741,6 +3803,7 @@ function RecordModal({ record, onClose }) {
                     <div className="ocu-print-section ocu-print-grid-2 grid grid-cols-1 md:grid-cols-2 gap-5">
                         <ReportInfoCard label="Patient Information">
                             <ReportRow label="Name" value={record.patient} />
+                            <ReportRow label="NRIC / Passport" value={record.nric || '—'} mono />
                             <ReportRow label="Age" value={`${record.age} yrs`} />
                             <ReportRow label="Record ID" value={record.id} mono />
                             <ReportRow label="Scan Date" value={record.date} />
@@ -3766,6 +3829,17 @@ function RecordModal({ record, onClose }) {
                                 </li>
                             ))}
                         </ul>
+                    </div>
+
+                    <div className="ocu-print-section p-6 rounded-3xl border-2 border-[#244C3E]/20 bg-[#244C3E]/5">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-[#244C3E] font-bold">Referral &amp; Next Steps</p>
+                            <span className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full bg-[#244C3E] text-white whitespace-nowrap">{interp.referral.urgency}</span>
+                        </div>
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                            <i className="fa-solid fa-user-doctor text-[#244C3E] mr-2"></i>
+                            {interp.referral.next} <strong>Refer to:</strong> {interp.referral.to} <span className="text-slate-500">· {interp.referral.where}</span>.
+                        </p>
                     </div>
 
                     <div className="ocu-print-section">
