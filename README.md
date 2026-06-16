@@ -26,11 +26,11 @@
 
 ## Overview
 
-**Calisto (OcuVision AI)** is a modern, web-based clinical screening tool that analyzes **retinal fundus images** and flags signs of common eye diseases in seconds. It pairs a polished, glassmorphic single-page dashboard with a real AI inference backend — supporting both a **MATLAB Bagged Trees** classifier and a **Python ResNet50 CNN**, with a built-in demo mode so the site stays usable anywhere.
+**Calisto (OcuVision AI)** is a modern, web-based clinical screening tool that analyzes **retinal fundus images** and flags signs of common eye diseases. It pairs a polished, glassmorphic single-page dashboard with a real AI inference backend — supporting both a **MATLAB Bagged Trees** classifier and a **Python ResNet50 CNN**, with a built-in demo mode so the site stays usable anywhere.
 
 The frontend runs entirely client-side on GitHub Pages; when connected to the OcuVision backend it performs genuine feature extraction (GLCM texture, intensity statistics, vessel morphology, optic-nerve-head cup-to-disc ratio) and disease classification.
 
-> ⚠️ **Disclaimer:** Calisto is a research / final-year-project tool and is **not** a certified medical device. It is intended to assist screening workflows, not to replace a qualified ophthalmologist's diagnosis.
+> ⚠️ **Disclaimer:** Calisto is a research / integrated-design-project prototype and is **not** a certified medical device. It is intended to assist screening workflows, not to replace a qualified ophthalmologist's diagnosis.
 
 <div align="center">
 
