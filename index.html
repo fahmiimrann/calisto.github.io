@@ -499,20 +499,27 @@ function formatFileSize(bytes = 0) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// --- Confidence Threshold (Settings → AI Core Configuration) -------------
-// Persisted in localStorage so the choice carries across sessions and is
-// read by Diagnostics to flag low-confidence AI predictions.
-const CONFIDENCE_THRESHOLD_KEY = 'ocu-confidence-threshold';
-const DEFAULT_CONFIDENCE_THRESHOLD = 85;
-function getConfidenceThreshold() {
+// --- Connected fundus cameras (Settings → Device Link) -------------------
+// The app cannot auto-detect a clinical fundus camera over the browser, so
+// connected devices are registered explicitly in Settings → Device Link and
+// persisted in localStorage. Diagnostics reads this list to populate the
+// "Connect Local Camera" picker; if it's empty the picker is left blank.
+const FUNDUS_CAMERAS_KEY = 'ocu-fundus-cameras';
+// Real fundus camera models offered when registering a new device.
+const KNOWN_FUNDUS_CAMERAS = [
+    'Topcon TRC-NW400', 'Canon CR-2 AF', 'Optos Daytona',
+    'Carl Zeiss VISUCAM 524', 'Nidek AFC-330', 'Optomed Aurora',
+    'Volk Pictor Plus', 'Remidio FOP NM-10'
+];
+function getFundusCameras() {
     try {
-        const stored = parseInt(localStorage.getItem(CONFIDENCE_THRESHOLD_KEY) || '', 10);
-        if (Number.isFinite(stored) && stored >= 50 && stored <= 99) return stored;
+        const raw = JSON.parse(localStorage.getItem(FUNDUS_CAMERAS_KEY) || '[]');
+        if (Array.isArray(raw)) return raw;
     } catch (_) {}
-    return DEFAULT_CONFIDENCE_THRESHOLD;
+    return [];
 }
-function setConfidenceThreshold(value) {
-    try { localStorage.setItem(CONFIDENCE_THRESHOLD_KEY, String(value)); } catch (_) {}
+function setFundusCameras(list) {
+    try { localStorage.setItem(FUNDUS_CAMERAS_KEY, JSON.stringify(Array.isArray(list) ? list : [])); } catch (_) {}
 }
 
 // --- Mock Data ---
@@ -632,6 +639,57 @@ function weeklyVolume(records, weeks = 4) {
         }
     }
     return buckets.map(b => ({ label: b.label, count: b.count }));
+}
+
+// Records whose scan date falls within [startYMD, endYMD] inclusive — used by
+// the Analytics "Custom" date-range picker.
+function recordsBetween(records, startYMD, endYMD) {
+    if (!Array.isArray(records) || !startYMD || !endYMD) return [];
+    const start = new Date(startYMD); start.setHours(0, 0, 0, 0);
+    const end = new Date(endYMD); end.setHours(23, 59, 59, 999);
+    return records.filter(r => {
+        const d = new Date(r.date);
+        return !Number.isNaN(d.getTime()) && d >= start && d <= end;
+    });
+}
+
+// Volume series for an arbitrary [start, end] window (not anchored to today).
+// Buckets by day for spans up to ~31 days, otherwise by week. Returns the same
+// { series, total, avg, todayCount } shape used by reviewedPerDay so the
+// existing charts render unchanged.
+function rangeVolume(records, startYMD, endYMD) {
+    const start = new Date(startYMD); start.setHours(0, 0, 0, 0);
+    const end = new Date(endYMD); end.setHours(0, 0, 0, 0);
+    const spanDays = Math.floor((end - start) / 86400000) + 1;
+    if (!(spanDays > 0)) return { series: [], total: 0, avg: 0, todayCount: 0 };
+    const series = [];
+    if (spanDays <= 31) {
+        for (let i = 0; i < spanDays; i++) {
+            const dt = new Date(start); dt.setDate(start.getDate() + i);
+            series.push({ key: _toYMD(dt), label: `${dt.getDate()}/${dt.getMonth() + 1}`, count: 0 });
+        }
+        const map = {}; series.forEach(s => { map[s.key] = s; });
+        for (const r of records) { const k = _toYMD(r.date); if (map[k]) map[k].count++; }
+    } else {
+        const weeks = Math.ceil(spanDays / 7);
+        const bounds = [];
+        for (let i = 0; i < weeks; i++) {
+            const bStart = new Date(start); bStart.setDate(start.getDate() + i * 7);
+            const bEnd = new Date(bStart); bEnd.setDate(bStart.getDate() + 6);
+            if (bEnd > end) bEnd.setTime(end.getTime());
+            const entry = { label: `Wk ${i + 1}`, count: 0 };
+            series.push(entry); bounds.push({ entry, bStart, bEnd });
+        }
+        for (const r of records) {
+            const d = new Date(r.date); if (Number.isNaN(d.getTime())) continue;
+            d.setHours(0, 0, 0, 0);
+            for (const b of bounds) { if (d >= b.bStart && d <= b.bEnd) { b.entry.count++; break; } }
+        }
+    }
+    const total = series.reduce((s, o) => s + o.count, 0);
+    const todayKey = _toYMD(new Date());
+    const todayCount = (records || []).filter(r => _toYMD(r.date) === todayKey).length;
+    return { series: series.map(({ label, count }) => ({ label, count })), total, avg: total / spanDays, todayCount };
 }
 
 // Ophthalmic-epidemiology age bins (20-year groups).
@@ -1143,9 +1201,13 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     const [imgSrc, setImgSrc] = useState(null);
     const [progress, setProgress] = useState(0);
     const [result, setResult] = useState(null);
-    const [cameraStream, setCameraStream] = useState(null);
-    const [webcamError, setWebcamError] = useState('');
     const [device, setDevice] = useState('');
+    // Capture device model recorded on the saved record when the scan is run
+    // via "Connect Local Camera"; null for uploaded files.
+    const [captureDevice, setCaptureDevice] = useState(null);
+    // Registered fundus cameras (from Settings → Device Link). Empty means no
+    // hardware connected, so the picker stays blank.
+    const [cameras, setCameras] = useState(() => getFundusCameras());
     const [showPatientForm, setShowPatientForm] = useState(false);
     // Patient details are captured *before* the AI scan now (right after a fundus
     // image is uploaded/captured). We stash them here so the scan can resume with
@@ -1157,7 +1219,6 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     const [selectedModelId, setSelectedModelId] = useState('');
     const [modelsLoading, setModelsLoading] = useState(false);
     const fileInputRef = useRef();
-    const videoRef = useRef();
 
     // Load the model list so the per-scan picker can populate. We refresh
     // every time the user navigates back to the Diagnostics page so any
@@ -1179,40 +1240,11 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         return () => { cancelled = true; };
     }, [isActive]);
 
+    // Refresh the registered-camera list whenever the user returns to the
+    // Diagnostics page, so devices added in Settings → Device Link appear.
     useEffect(() => {
-        return () => cameraStream?.getTracks().forEach(track => track.stop());
-    }, [cameraStream]);
-
-    useEffect(() => {
-        if (videoRef.current && cameraStream && activeOption === 'webcam') {
-            videoRef.current.srcObject = cameraStream;
-        }
-    }, [cameraStream, activeOption]);
-
-    // When the user navigates to another page, the Diagnostics component stays mounted
-    // (so the uploaded image, results, and progress are preserved). However we shut down
-    // the live webcam stream for privacy — the user can reopen the camera when they return.
-    useEffect(() => {
-        if (!isActive && cameraStream) {
-            cameraStream.getTracks().forEach(track => track.stop());
-            setCameraStream(null);
-            if (activeOption === 'webcam' && stage === 'connect') {
-                setActiveOption(null);
-            }
-        }
-    }, [isActive, cameraStream, activeOption, stage]);
-
-    async function openCamera() {
-        setActiveOption('webcam');
-        setWebcamError('');
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            setCameraStream(stream);
-        } catch (err) {
-            setWebcamError('Could not access camera.');
-            showToast && showToast('Camera access denied.');
-        }
-    }
+        if (isActive) setCameras(getFundusCameras());
+    }, [isActive]);
 
     // After an image is captured/selected we no longer kick off the AI scan
     // immediately — instead we stash the capture and open the Patient Details
@@ -1332,23 +1364,10 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         }, 80);
     }
 
-    function captureWebcam(e) {
-        e.stopPropagation();
-        if (!videoRef.current) return;
-        const canvas = document.createElement('canvas');
-        canvas.width = videoRef.current.videoWidth || 640;
-        canvas.height = videoRef.current.videoHeight || 480;
-        canvas.getContext('2d').drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        const capture = canvas.toDataURL('image/png');
-        cameraStream?.getTracks().forEach(track => track.stop());
-        setCameraStream(null);
-        showToast && showToast('Image captured from webcam.');
-        queueCapture(capture, 'webcam-capture.png');
-    }
-
     function handleFile(e) {
         const selected = e.target.files[0];
         if (!selected) return;
+        setCaptureDevice(null); // uploaded file — no capture device
         const reader = new FileReader();
         reader.onload = evt => {
             showToast && showToast('Image file loaded.');
@@ -1368,6 +1387,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         setResult(null);
         setProgress(0);
         setDevice('');
+        setCaptureDevice(null);
         setShowPatientForm(false);
         setPendingDetails(null);
         setPendingCapture(null);
@@ -1415,6 +1435,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
             confidence: `${scanResult.score}%`,
             doctor: details.doctor || currentDoctor || 'Unassigned',
             severity: severityFromStatus,
+            capture_device: captureDevice || null,
             fundus_image: imgSrc || null,
             features: scanResult.features || null
         };
@@ -1425,7 +1446,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="text-center mb-12">
                 <h1 className="text-3xl font-bold text-[#1a1a1e] tracking-tight">AI Screening Input</h1>
-                <p className="text-slate-500 mt-2">Choose webcam, connected camera, or upload just like the full OcuVision workflow.</p>
+                <p className="text-slate-500 mt-2">Connect a local fundus camera or upload an image, just like the full OcuVision workflow.</p>
             </div>
             {stage === 'connect' && (
                 <ModelPicker
@@ -1436,30 +1457,23 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                 />
             )}
             {stage === 'connect' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <InputOption active={activeOption === 'webcam'} color="blue" icon="fa-camera" title="Open Camera" text="Use the PC webcam to capture a live screening photo." onClick={openCamera}>
-                        {activeOption === 'webcam' && (
-                            <div className="w-full flex flex-col items-center gap-3">
-                                {webcamError && <p className="text-xs text-red-500">{webcamError}</p>}
-                                <div className="aspect-video w-full rounded-xl overflow-hidden bg-slate-900">
-                                    <video autoPlay muted playsInline ref={videoRef} className="w-full h-full object-cover" />
-                                </div>
-                                <button className="px-5 py-2 premium-gradient text-white rounded-lg text-sm font-bold" onClick={captureWebcam}>Capture Image</button>
-                            </div>
-                        )}
-                    </InputOption>
-                    <InputOption active={activeOption === 'device'} color="emerald" icon="fa-plug-circle-bolt" title="Connect Local Camera" text="Pair a fundus or external imaging device for capture." onClick={() => setActiveOption('device')}>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <InputOption active={activeOption === 'device'} color="emerald" icon="fa-plug-circle-bolt" title="Connect Local Camera" text="Capture directly from a connected fundus camera." onClick={() => { setCameras(getFundusCameras()); setActiveOption('device'); }}>
                         {activeOption === 'device' && (
                             <div className="w-full space-y-3">
                                 <select className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm" value={device} onChange={e=>setDevice(e.target.value)}>
-                                    <option value="">Select device...</option>
-                                    <option>USB Camera</option>
-                                    <option>Fundus Camera</option>
-                                    <option>External Camera</option>
+                                    <option value="">{cameras.length ? 'Select fundus camera…' : 'No fundus camera connected'}</option>
+                                    {cameras.map(c => (
+                                        <option key={c.id} value={c.model}>{c.model}{c.connection ? ` · ${c.connection}` : ''}</option>
+                                    ))}
                                 </select>
-                                <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); queueCapture('https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=800&auto=format&fit=crop', `${device || 'device'}-capture.jpg`); }}>
-                                    <i className="fa-solid fa-bolt mr-2"></i>Capture Image
-                                </button>
+                                {cameras.length === 0 ? (
+                                    <p className="text-xs text-slate-500">No fundus camera connected. Add one in <span className="font-semibold">Settings → Device Link</span>.</p>
+                                ) : (
+                                    <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); setCaptureDevice(device); queueCapture('https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=800&auto=format&fit=crop', `${device || 'device'}-capture.jpg`); }}>
+                                        <i className="fa-solid fa-bolt mr-2"></i>Capture from {device || 'device'}
+                                    </button>
+                                )}
                             </div>
                         )}
                     </InputOption>
@@ -1483,9 +1497,6 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                 </div>
             )}
             {stage === 'results' && result && (() => {
-                const threshold = getConfidenceThreshold();
-                const scoreNum = parseFloat(result.score);
-                const belowThreshold = Number.isFinite(scoreNum) && scoreNum < threshold;
                 return (
                 <div className="space-y-8">
                     <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1507,25 +1518,18 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                                         {engineLabel(result.model?.runtime)} - {result.model.name}
                                     </p>
                                 )}
+                                {captureDevice && (
+                                    <p className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-semibold">
+                                        <i className="fa-solid fa-camera-retro text-[10px]"></i>
+                                        Captured by {captureDevice}
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="flex gap-3">
                             <button onClick={reset} className="px-5 py-2 bg-white border border-slate-200 rounded-lg font-bold text-sm">New Scan</button>
                         </div>
                     </div>
-                    {belowThreshold && (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 flex items-start gap-4">
-                            <i className="fa-solid fa-triangle-exclamation text-rose-600 text-xl mt-0.5"></i>
-                            <div className="flex-1">
-                                <p className="font-bold text-rose-700">
-                                    AI confidence ({result.score}%) is below the {threshold}% threshold.
-                                </p>
-                                <p className="text-sm text-rose-700/90 mt-1">
-                                    Manual clinical review is recommended before finalizing this record. You can still save it, but consider re-scanning with better image quality or having an ophthalmologist verify the finding. Adjust the threshold in <span className="font-semibold">Settings → AI Core Configuration</span>.
-                                </p>
-                            </div>
-                        </div>
-                    )}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <ResultPreview title="Original Fundus" src={imgSrc} />
                         <ResultPreview title="CLAHE Enhanced" src={imgSrc} filter="grayscale contrast-125" />
@@ -2253,15 +2257,28 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
 // criticalCount, reviewedPerDay).
 function Analytics({ records = [], showToast }) {
     const [range, setRange] = useState('7d');
-    const days = range === '30d' ? 30 : 7;
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
+    const isCustomSelected = range === 'custom';
+    const isCustom = isCustomSelected && customStart && customEnd && customStart <= customEnd;
+    const days = range === '30d' ? 30
+        : isCustom ? (Math.floor((new Date(customEnd) - new Date(customStart)) / 86400000) + 1)
+        : 7;
 
-    const recentRecords = useMemo(() => getRecentRecords(records, days),    [records, days]);
+    const recentRecords = useMemo(() => (
+        isCustomSelected ? (isCustom ? recordsBetween(records, customStart, customEnd) : [])
+                         : getRecentRecords(records, days)
+    ), [records, days, isCustomSelected, isCustom, customStart, customEnd]);
     const distribution  = useMemo(() => caseDistribution(recentRecords),     [recentRecords]);
     const trendBars     = useMemo(() => (
-        days <= 14 ? dailyVolume(recentRecords, days) : weeklyVolume(recentRecords, 4)
-    ), [recentRecords, days]);
+        isCustom ? rangeVolume(recentRecords, customStart, customEnd).series
+        : days <= 14 ? dailyVolume(recentRecords, days) : weeklyVolume(recentRecords, 4)
+    ), [recentRecords, days, isCustom, customStart, customEnd]);
     const ageStats      = useMemo(() => ageGroupPeak(recentRecords),         [recentRecords]);
-    const reviewed      = useMemo(() => reviewedPerDay(recentRecords, days), [recentRecords, days]);
+    const reviewed      = useMemo(() => (
+        isCustom ? rangeVolume(recentRecords, customStart, customEnd)
+                 : reviewedPerDay(recentRecords, days)
+    ), [recentRecords, days, isCustom, customStart, customEnd]);
     // Gender distribution is sourced from the FULL Patient Registry, not
     // the active time-window. Demographics are a property of the patient
     // base, not the recent screening volume — limiting the donut to the
@@ -2285,15 +2302,27 @@ function Analytics({ records = [], showToast }) {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Analytics Dashboard</h1>
                     <p className="text-slate-500 mt-1">
-                        Computed from {recentRecords.length} record{recentRecords.length === 1 ? '' : 's'} in the last {days} days.
+                        {isCustomSelected
+                            ? (isCustom
+                                ? `Computed from ${recentRecords.length} record${recentRecords.length === 1 ? '' : 's'} between ${customStart} and ${customEnd}.`
+                                : 'Pick a start and end date to see analytics for that period.')
+                            : `Computed from ${recentRecords.length} record${recentRecords.length === 1 ? '' : 's'} in the last ${days} days.`}
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     {['7d','30d','custom'].map(item => (
-                        <button key={item} onClick={() => { setRange(item); showToast && showToast(`Analytics range: ${item}`); }} className={`px-4 py-2 rounded-full text-xs font-bold uppercase border ${range === item ? 'premium-gradient text-white border-slate-800' : 'bg-white/80 text-slate-500 border-slate-100'}`}>
+                        <button key={item} onClick={() => { setRange(item); showToast && showToast(`Analytics range: ${item === '7d' ? 'last 7 days' : item === '30d' ? 'last 30 days' : 'custom'}`); }} className={`px-4 py-2 rounded-full text-xs font-bold uppercase border ${range === item ? 'premium-gradient text-white border-slate-800' : 'bg-white/80 text-slate-500 border-slate-100'}`}>
                             {item === '7d' ? 'Last 7 days' : item === '30d' ? 'Last 30 days' : 'Custom'}
                         </button>
                     ))}
+                    {isCustomSelected && (
+                        <div className="flex items-center gap-2 ml-1 bg-white/80 border border-slate-100 rounded-2xl px-3 py-1.5">
+                            <i className="fa-solid fa-calendar-days text-slate-400 text-xs"></i>
+                            <input type="date" value={customStart} max={customEnd || undefined} onChange={e => setCustomStart(e.target.value)} className="bg-transparent text-xs font-semibold text-slate-600 focus:outline-none" />
+                            <span className="text-slate-400 text-xs font-bold">to</span>
+                            <input type="date" value={customEnd} min={customStart || undefined} onChange={e => setCustomEnd(e.target.value)} className="bg-transparent text-xs font-semibold text-slate-600 focus:outline-none" />
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -2432,8 +2461,8 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
 
     async function loadModels() {
         if (!isBackendConfigured()) {
-            setAiModels([{ id: 'demo-retina-core', name: 'Demo Retina Core', originalName: 'Built-in demo backend logic', type: 'demo', size: 0, active: true }]);
-            setActiveModelId('demo-retina-core');
+            setAiModels([{ id: 'python-cnn-resnet50', name: 'Python AI - End-to-End ResNet50 CNN', originalName: 'Built-in (python/python_predict.py --engine cnn)', type: 'python-cnn', size: 0, active: true }]);
+            setActiveModelId('python-cnn-resnet50');
             return;
         }
 
@@ -2551,21 +2580,7 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                         />
                     </div>
                 )}
-                {tab === 'device' && (
-                    <div className="space-y-7">
-                        <h2 className="text-2xl font-bold">Connected Hardware</h2>
-                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><i className="fa-solid fa-desktop"></i></div>
-                                <div><p className="font-bold">Calisto-FC-Optima</p><p className="text-xs text-emerald-600 font-bold uppercase tracking-widest">Active connection - USB 3.1</p></div>
-                            </div>
-                            <button onClick={() => showToast && showToast('Device disconnected.')} className="px-4 py-2 bg-white rounded-xl text-xs font-bold text-slate-500">Disconnect</button>
-                        </div>
-                        <SettingToggle label="Auto-detect optic disc focus" active />
-                        <SettingToggle label="Adaptive brightness correction" active />
-                        <SettingToggle label="Export as DICOM by default" />
-                    </div>
-                )}
+                {tab === 'device' && <DeviceLinkPanel showToast={showToast} />}
                 {tab === 'security' && (
                     <div className="space-y-7">
                         <h2 className="text-2xl font-bold">Security & Privacy</h2>
@@ -2688,7 +2703,6 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                                 <span className="font-bold">MATLAB-ready.</span> Upload a <code className="font-mono">.m</code> / <code className="font-mono">.mlx</code> function (filename = function name, takes an image path, returns a struct with <code className="font-mono">diagnosis, score, severity, notes</code>), OR a <code className="font-mono">.mat</code> Classification-Learner export (a struct with <code className="font-mono">predictFcn</code>). For <code className="font-mono">.mat</code> files the backend auto-extracts the OcuVision feature table from the uploaded image and calls <code className="font-mono">predictFcn</code> for you — so make sure your model was trained with column names matching the report's Extracted Features section (<code className="font-mono">GLCM_Contrast</code>, <code className="font-mono">Intensity_Mean</code>, <code className="font-mono">Vessel_GVD_pct</code>, <code className="font-mono">ONH_CupToDiscRatio</code>, etc.). MATLAB must be installed on the server and the <code className="font-mono">MATLAB_EXEC</code> environment variable must point to its executable.
                             </p>
                         </div>
-                        <ConfidenceThresholdSetting showToast={showToast} />
                         <SettingToggle label="Enable Auto-Save Results" active />
                     </div>
                 )}
@@ -2761,51 +2775,89 @@ function SettingToggle({ label, active = false, onClick }) {
     );
 }
 
-// Functional Confidence Threshold control.
-// The chosen value (50–99 %) is saved in localStorage. Diagnostics reads
-// it after each AI screening: if the model's confidence falls below this
-// number, the screening report shows a red "below threshold — manual
-// review required" banner so the clinician is prompted to verify the
-// result before saving it to the Patient Registry.
-function ConfidenceThresholdSetting({ showToast }) {
-    const [value, setValue] = useState(() => getConfidenceThreshold());
+// Settings → Device Link. Fundus cameras are registered explicitly here and
+// persisted in localStorage; the Diagnostics "Connect Local Camera" picker
+// reads the same list. When nothing is connected the panel shows a clear
+// empty state instead of inventing hardware.
+function DeviceLinkPanel({ showToast }) {
+    const [cameras, setCameras] = useState(() => getFundusCameras());
+    const [adding, setAdding] = useState(false);
+    const [model, setModel] = useState(KNOWN_FUNDUS_CAMERAS[0]);
+    const [connection, setConnection] = useState('USB 3.0');
 
-    function handleChange(e) {
-        const v = parseInt(e.target.value, 10);
-        if (!Number.isFinite(v)) return;
-        setValue(v);
-        setConfidenceThreshold(v);
+    function persist(list) {
+        setCameras(list);
+        setFundusCameras(list);
     }
-
-    function handleCommit() {
-        if (showToast) showToast(`Confidence threshold set to ${value}%.`);
+    function addCamera() {
+        if (!model) return;
+        const cam = { id: `cam-${Date.now()}`, model, connection, connectedAt: new Date().toISOString() };
+        persist([...cameras, cam]);
+        setAdding(false);
+        showToast && showToast(`${model} connected.`);
+    }
+    function removeCamera(id) {
+        const cam = cameras.find(c => c.id === id);
+        persist(cameras.filter(c => c.id !== id));
+        showToast && showToast(`${cam ? cam.model : 'Device'} disconnected.`);
     }
 
     return (
-        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
-            <div className="flex items-baseline justify-between gap-3">
-                <div>
-                    <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold block">Confidence Threshold</label>
-                    <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                        Minimum AI confidence required to accept a screening result without manual review. Predictions below this threshold are flagged in the Diagnostics report so the clinician verifies the finding before saving it to the Patient Registry.
-                    </p>
+        <div className="space-y-7">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-2xl font-bold">Connected Hardware</h2>
+                {!adding && (
+                    <button onClick={() => setAdding(true)} className="px-4 py-2 premium-gradient text-white rounded-xl text-sm font-bold">
+                        <i className="fa-solid fa-plus mr-2"></i>Connect fundus camera
+                    </button>
+                )}
+            </div>
+
+            {adding && (
+                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                    <p className="font-bold">Connect a fundus camera</p>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Camera model</label>
+                            <select value={model} onChange={e=>setModel(e.target.value)} className="w-full mt-2 px-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm">
+                                {KNOWN_FUNDUS_CAMERAS.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Connection</label>
+                            <select value={connection} onChange={e=>setConnection(e.target.value)} className="w-full mt-2 px-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm">
+                                {['USB 3.0','USB 2.0','USB-C','Ethernet (LAN)','Wi-Fi'].map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="flex gap-3">
+                        <button onClick={addCamera} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold">Connect</button>
+                        <button onClick={() => setAdding(false)} className="px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-500">Cancel</button>
+                    </div>
                 </div>
-                <span className="shrink-0 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-bold text-slate-800 font-mono">{value}%</span>
-            </div>
-            <input
-                type="range"
-                min="50"
-                max="99"
-                value={value}
-                onChange={handleChange}
-                onMouseUp={handleCommit}
-                onTouchEnd={handleCommit}
-                className="w-full accent-slate-900"
-            />
-            <div className="flex justify-between text-[10px] uppercase tracking-widest text-slate-400 font-bold">
-                <span>50% (lenient)</span>
-                <span>99% (strict)</span>
-            </div>
+            )}
+
+            {cameras.length === 0 && !adding && (
+                <div className="p-10 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-center">
+                    <div className="w-14 h-14 mx-auto bg-white rounded-2xl flex items-center justify-center text-slate-300 text-xl mb-4"><i className="fa-solid fa-camera-retro"></i></div>
+                    <p className="font-bold text-slate-600">No fundus camera connected</p>
+                    <p className="text-sm text-slate-500 mt-1">Connect a fundus camera to capture images directly in Diagnostics.</p>
+                </div>
+            )}
+
+            {cameras.map(cam => (
+                <div key={cam.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><i className="fa-solid fa-camera-retro"></i></div>
+                        <div><p className="font-bold">{cam.model}</p><p className="text-xs text-emerald-600 font-bold uppercase tracking-widest">Active connection · {cam.connection}</p></div>
+                    </div>
+                    <button onClick={() => removeCamera(cam.id)} className="px-4 py-2 bg-white rounded-xl text-xs font-bold text-slate-500">Disconnect</button>
+                </div>
+            ))}
+
+            <SettingToggle label="Auto-detect optic disc focus" active />
+            <SettingToggle label="Adaptive brightness correction" active />
+            <SettingToggle label="Export as DICOM by default" />
         </div>
     );
 }
@@ -3808,6 +3860,7 @@ function RecordModal({ record, onClose }) {
                             <ReportRow label="Record ID" value={record.id} mono />
                             <ReportRow label="Scan Date" value={record.date} />
                             <ReportRow label="Attending" value={record.doctor} />
+                            {record.capture_device && <ReportRow label="Capture Device" value={record.capture_device} />}
                         </ReportInfoCard>
                         <ReportInfoCard label="AI Verdict">
                             <ReportRow label="Diagnosis" value={record.result} />
