@@ -4064,6 +4064,21 @@ const App = () => {
         return true;
     }
 
+    // Open a record's report. The list payload omits the heavy fundus image to
+    // keep loads fast, so we show the record immediately (SVG fallback) and then
+    // lazy-fetch the full record (with image) and swap it in.
+    async function openRecord(record) {
+        if (!record) return;
+        setModalRecord(record);
+        if (record.fundus_image) return;
+        try {
+            const full = await apiRequest(`/api/records/${record.id}`);
+            if (full && full.record) {
+                setModalRecord(prev => (prev && prev.id === full.record.id) ? full.record : prev);
+            }
+        } catch (_) { /* keep the partial record; report falls back to synthetic view */ }
+    }
+
     if (bootState === 'loading') return <BootSplash message={bootMessage} />;
     if (bootState === 'auth' || !user) return <AuthPage onAuth={handleAuth} />;
 
@@ -4074,7 +4089,7 @@ const App = () => {
             {/* Main content */}
             <main className="flex-1 ml-72 p-12 lg:p-16">
                 <header className="flex justify-between items-center mb-12">
-                    <GlobalSearch records={records} onPickRecord={setModalRecord} setView={setView} />
+                    <GlobalSearch records={records} onPickRecord={openRecord} setView={setView} />
                     <div className="flex items-center gap-6">
                         <NotificationBell
                             notifications={notifications}
@@ -4099,7 +4114,7 @@ const App = () => {
                     }}
                     statsChartDemo={() => triggerToast("Bar chart reacts to interaction (demo).")}
                     recordsDemo={records}
-                    onRecordClick={setModalRecord}
+                    onRecordClick={openRecord}
                   />
                 </div>
                 <div style={{ display: view === 'screening' ? 'block' : 'none' }}>
@@ -4114,7 +4129,7 @@ const App = () => {
                 <div style={{ display: view === 'records' ? 'block' : 'none' }}>
                   <PatientRegistry
                     records={records}
-                    onRecordClick={setModalRecord}
+                    onRecordClick={openRecord}
                     onUpdateRecord={updateRecord}
                     onDeleteRecord={deleteRecord}
                     onVerifyPassword={verifyPassword}

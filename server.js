@@ -777,11 +777,24 @@ function normalizeRecordPayload(body = {}) {
     return { record };
 }
 
-// List all patient records.
+// List all patient records. The list omits the heavy `fundus_image` blob so
+// the payload stays small; the full record (with image) is fetched per-report.
 app.get('/api/records', requireAuth, async (_req, res, next) => {
     try {
         const records = await db.getAllRecords();
         res.json({ records });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// Fetch a single full record (including the base64 fundus image) on demand,
+// used when opening a diagnostic report.
+app.get('/api/records/:id', requireAuth, async (req, res, next) => {
+    try {
+        const record = await db.findRecordById(req.params.id);
+        if (!record) return res.status(404).json({ error: 'Record not found.' });
+        res.json({ record });
     } catch (err) {
         next(err);
     }

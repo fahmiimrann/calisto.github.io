@@ -215,23 +215,36 @@ async function setUserToken(id, token) {
 }
 
 // --- Record operations -----------------------------------------------------
+// Columns returned by the LIST endpoint. We deliberately omit `fundus_image`
+// (a large base64 blob, ~270 KB each) so the registry/dashboard payload stays
+// small and fast; the full image is fetched on demand via findRecordById when
+// a single report is opened.
+const LIST_COLUMNS = ['id', 'patient', 'nric', 'age', 'gender', 'date', 'result',
+    'confidence', 'doctor', 'severity', 'features', 'created_by', 'created_at',
+    'updated_by', 'updated_at'];
+
 async function getAllRecords() {
     if (useSupabase) {
         const { data, error } = await supabase
             .from('records')
-            .select('*')
+            .select(LIST_COLUMNS.join(','))
             .order('created_at', { ascending: false, nullsFirst: false })
             .order('date', { ascending: false });
         if (error) throw error;
         return data || [];
     }
     if (useMysql) {
+        const cols = LIST_COLUMNS.map(c => `\`${c}\``).join(', ');
         const rows = await mysqlQuery(
-            'SELECT * FROM `records` ORDER BY `created_at` DESC, `date` DESC'
+            `SELECT ${cols} FROM \`records\` ORDER BY \`created_at\` DESC, \`date\` DESC`
         );
         return rows.map(rowToRecord);
     }
-    return readJsonFile(RECORDS_FILE, SEED_RECORDS);
+    // Local JSON fallback: strip the heavy image field to mirror the list shape.
+    return readJsonFile(RECORDS_FILE, SEED_RECORDS).map(r => {
+        const { fundus_image, ...rest } = r;
+        return rest;
+    });
 }
 
 async function findRecordById(id) {
