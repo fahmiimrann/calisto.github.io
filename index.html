@@ -1564,7 +1564,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
                                     <MetricCard label="Confidence Score" value={`${result.score}%`} />
                                     <MetricCard label="Severity Level" value={result.status} />
-                                    <MetricCard label="Expert Validation" value={belowThreshold || result.status !== 'Optimal' ? 'Required' : 'Optional'} />
+                                    <MetricCard label="Expert Validation" value={result.status !== 'Optimal' ? 'Required' : 'Optional'} />
                                 </div>
                             </div>
                         </div>
