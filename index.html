@@ -2776,6 +2776,7 @@ function SettingToggle({ label, active = false, onClick }) {
 function DeviceLinkPanel({ showToast }) {
     const [cameras, setCameras] = useState(() => getFundusCameras());
     const [adding, setAdding] = useState(false);
+    const [editingId, setEditingId] = useState(null);
     const [model, setModel] = useState('');
     const [connection, setConnection] = useState('USB 3.0');
 
@@ -2783,19 +2784,36 @@ function DeviceLinkPanel({ showToast }) {
         setCameras(list);
         setFundusCameras(list);
     }
-    function addCamera() {
+    function resetForm() {
+        setAdding(false);
+        setEditingId(null);
+        setModel('');
+        setConnection('USB 3.0');
+    }
+    function saveCamera() {
         const name = model.trim();
         if (!name) { showToast && showToast('Enter a camera model.'); return; }
-        const cam = { id: `cam-${Date.now()}`, model: name, connection, connectedAt: new Date().toISOString() };
-        persist([...cameras, cam]);
-        setAdding(false);
-        setModel('');
-        showToast && showToast(`${name} connected.`);
+        if (editingId) {
+            persist(cameras.map(c => c.id === editingId ? { ...c, model: name, connection } : c));
+            showToast && showToast(`${name} saved.`);
+        } else {
+            const cam = { id: `cam-${Date.now()}`, model: name, connection, connectedAt: new Date().toISOString() };
+            persist([...cameras, cam]);
+            showToast && showToast(`${name} saved.`);
+        }
+        resetForm();
     }
-    function removeCamera(id) {
+    function editCamera(cam) {
+        setEditingId(cam.id);
+        setModel(cam.model);
+        setConnection(cam.connection || 'USB 3.0');
+        setAdding(true);
+    }
+    function deleteCamera(id) {
         const cam = cameras.find(c => c.id === id);
         persist(cameras.filter(c => c.id !== id));
-        showToast && showToast(`${cam ? cam.model : 'Device'} disconnected.`);
+        if (editingId === id) resetForm();
+        showToast && showToast(`${cam ? cam.model : 'Device'} deleted.`);
     }
 
     return (
@@ -2811,7 +2829,7 @@ function DeviceLinkPanel({ showToast }) {
 
             {adding && (
                 <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
-                    <p className="font-bold">Connect a fundus camera</p>
+                    <p className="font-bold">{editingId ? 'Edit fundus camera' : 'Connect a fundus camera'}</p>
                     <div className="grid sm:grid-cols-2 gap-3">
                         <div>
                             <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Camera model</label>
@@ -2825,8 +2843,8 @@ function DeviceLinkPanel({ showToast }) {
                         </div>
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={addCamera} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold">Connect</button>
-                        <button onClick={() => setAdding(false)} className="px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-500">Cancel</button>
+                        <button onClick={saveCamera} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold"><i className="fa-solid fa-floppy-disk mr-2"></i>Save device</button>
+                        <button onClick={resetForm} className="px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-500">Cancel</button>
                     </div>
                 </div>
             )}
@@ -2845,7 +2863,10 @@ function DeviceLinkPanel({ showToast }) {
                         <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><i className="fa-solid fa-camera-retro"></i></div>
                         <div><p className="font-bold">{cam.model}</p><p className="text-xs text-emerald-600 font-bold uppercase tracking-widest">Active connection · {cam.connection}</p></div>
                     </div>
-                    <button onClick={() => removeCamera(cam.id)} className="px-4 py-2 bg-white rounded-xl text-xs font-bold text-slate-500">Disconnect</button>
+                    <div className="flex gap-2">
+                        <button onClick={() => editCamera(cam)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600"><i className="fa-solid fa-pen mr-2"></i>Edit</button>
+                        <button onClick={() => deleteCamera(cam.id)} className="px-4 py-2 bg-white border border-rose-200 rounded-xl text-xs font-bold text-rose-600"><i className="fa-solid fa-trash mr-2"></i>Delete</button>
+                    </div>
                 </div>
             ))}
 
