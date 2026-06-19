@@ -1213,6 +1213,9 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     const [selectedModelId, setSelectedModelId] = useState('');
     const [modelsLoading, setModelsLoading] = useState(false);
     const fileInputRef = useRef();
+    // When the user imports via "Connect Local Camera", this holds the selected
+    // device model so the resulting record is tagged with it. null = plain upload.
+    const captureIntentRef = useRef(null);
 
     // Load the model list so the per-scan picker can populate. We refresh
     // every time the user navigates back to the Diagnostics page so any
@@ -1361,10 +1364,14 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     function handleFile(e) {
         const selected = e.target.files[0];
         if (!selected) return;
-        setCaptureDevice(null); // uploaded file — no capture device
+        // Tag the record with the source device when the import was started from
+        // "Connect Local Camera"; plain "Browse Local Files" leaves it null.
+        const sourceDevice = captureIntentRef.current;
+        captureIntentRef.current = null;
+        setCaptureDevice(sourceDevice || null);
         const reader = new FileReader();
         reader.onload = evt => {
-            showToast && showToast('Image file loaded.');
+            showToast && showToast(sourceDevice ? `Image imported from ${sourceDevice}.` : 'Image file loaded.');
             queueCapture(evt.target.result, selected.name, selected);
         };
         reader.readAsDataURL(selected);
@@ -1452,7 +1459,8 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
             )}
             {stage === 'connect' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <InputOption active={activeOption === 'device'} color="emerald" icon="fa-plug-circle-bolt" title="Connect Local Camera" text="Capture directly from a connected fundus camera." onClick={() => { setCameras(getFundusCameras()); setActiveOption('device'); }}>
+                    <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFile} />
+                    <InputOption active={activeOption === 'device'} color="emerald" icon="fa-plug-circle-bolt" title="Connect Local Camera" text="Import the fundus image exported by your connected camera (USB drive, network, or DICOM export)." onClick={() => { setCameras(getFundusCameras()); setActiveOption('device'); }}>
                         {activeOption === 'device' && (
                             <div className="w-full space-y-3">
                                 <select className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm" value={device} onChange={e=>setDevice(e.target.value)}>
@@ -1464,9 +1472,12 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                                 {cameras.length === 0 ? (
                                     <p className="text-xs text-slate-500">No fundus camera connected. Add one in <span className="font-semibold">Settings → Device Link</span>.</p>
                                 ) : (
-                                    <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); setCaptureDevice(device); queueCapture('https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=800&auto=format&fit=crop', `${device || 'device'}-capture.jpg`); }}>
-                                        <i className="fa-solid fa-bolt mr-2"></i>Capture from {device || 'device'}
-                                    </button>
+                                    <React.Fragment>
+                                        <button disabled={!device} className={`w-full px-5 py-2 rounded-lg text-sm font-bold ${device ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`} onClick={e => { e.stopPropagation(); if (!device) return; captureIntentRef.current = device; fileInputRef.current.click(); }}>
+                                            <i className="fa-solid fa-bolt mr-2"></i>Import from {device || 'device'}
+                                        </button>
+                                        <p className="text-[11px] text-slate-400 leading-snug">Capture on the camera, then select the exported image. When connected by USB the device appears as a drive in the file picker.</p>
+                                    </React.Fragment>
                                 )}
                             </div>
                         )}
@@ -1474,8 +1485,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                     <InputOption active={activeOption === 'upload'} color="amber" icon="fa-upload" title="Browse Local Files" text="Upload high-resolution fundus photos in JPG, PNG, or TIFF." onClick={() => setActiveOption('upload')}>
                         {activeOption === 'upload' && (
                             <div className="w-full">
-                                <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFile} />
-                                <button className="w-full px-5 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold" onClick={e => { e.stopPropagation(); fileInputRef.current.click(); }}>
+                                <button className="w-full px-5 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold" onClick={e => { e.stopPropagation(); captureIntentRef.current = null; fileInputRef.current.click(); }}>
                                     Select Image
                                 </button>
                             </div>
