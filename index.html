@@ -505,12 +505,6 @@ function formatFileSize(bytes = 0) {
 // persisted in localStorage. Diagnostics reads this list to populate the
 // "Connect Local Camera" picker; if it's empty the picker is left blank.
 const FUNDUS_CAMERAS_KEY = 'ocu-fundus-cameras';
-// Real fundus camera models offered when registering a new device.
-const KNOWN_FUNDUS_CAMERAS = [
-    'Topcon TRC-NW400', 'Canon CR-2 AF', 'Optos Daytona',
-    'Carl Zeiss VISUCAM 524', 'Nidek AFC-330', 'Optomed Aurora',
-    'Volk Pictor Plus', 'Remidio FOP NM-10'
-];
 function getFundusCameras() {
     try {
         const raw = JSON.parse(localStorage.getItem(FUNDUS_CAMERAS_KEY) || '[]');
@@ -2782,7 +2776,7 @@ function SettingToggle({ label, active = false, onClick }) {
 function DeviceLinkPanel({ showToast }) {
     const [cameras, setCameras] = useState(() => getFundusCameras());
     const [adding, setAdding] = useState(false);
-    const [model, setModel] = useState(KNOWN_FUNDUS_CAMERAS[0]);
+    const [model, setModel] = useState('');
     const [connection, setConnection] = useState('USB 3.0');
 
     function persist(list) {
@@ -2790,11 +2784,13 @@ function DeviceLinkPanel({ showToast }) {
         setFundusCameras(list);
     }
     function addCamera() {
-        if (!model) return;
-        const cam = { id: `cam-${Date.now()}`, model, connection, connectedAt: new Date().toISOString() };
+        const name = model.trim();
+        if (!name) { showToast && showToast('Enter a camera model.'); return; }
+        const cam = { id: `cam-${Date.now()}`, model: name, connection, connectedAt: new Date().toISOString() };
         persist([...cameras, cam]);
         setAdding(false);
-        showToast && showToast(`${model} connected.`);
+        setModel('');
+        showToast && showToast(`${name} connected.`);
     }
     function removeCamera(id) {
         const cam = cameras.find(c => c.id === id);
@@ -2819,9 +2815,7 @@ function DeviceLinkPanel({ showToast }) {
                     <div className="grid sm:grid-cols-2 gap-3">
                         <div>
                             <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Camera model</label>
-                            <select value={model} onChange={e=>setModel(e.target.value)} className="w-full mt-2 px-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm">
-                                {KNOWN_FUNDUS_CAMERAS.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
+                            <input type="text" value={model} onChange={e=>setModel(e.target.value)} placeholder="Type your fundus camera model" autoComplete="off" className="w-full mt-2 px-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm" />
                         </div>
                         <div>
                             <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Connection</label>
