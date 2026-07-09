@@ -1,7 +1,7 @@
-<img width="1918" height="968" alt="image" src="https://github.com/user-attachments/assets/27f100a7-d143-4968-8b58-fb09d53f569e" />
-<img width="1918" height="966" alt="image" src="https://github.com/user-attachments/assets/a79a4879-b722-4b3c-ac48-9195b52af344" />
-<img width="1916" height="965" alt="image" src="https://github.com/user-attachments/assets/98c3bd4e-8ab3-4605-8d19-22f1d0496425" />
-<img width="1918" height="963" alt="image" src="https://github.com/user-attachments/assets/6159bfd7-217e-4d45-9bbb-b62b2b3c4f46" />
+<img width="1918" height="968" alt="Calisto overview dashboard" src="https://github.com/user-attachments/assets/27f100a7-d143-4968-8b58-fb09d53f569e" />
+<img width="1918" height="966" alt="Calisto diagnostics screen" src="https://github.com/user-attachments/assets/a79a4879-b722-4b3c-ac48-9195b52af344" />
+<img width="1916" height="965" alt="Calisto patient registry" src="https://github.com/user-attachments/assets/98c3bd4e-8ab3-4605-8d19-22f1d0496425" />
+<img width="1918" height="963" alt="Calisto insights analytics" src="https://github.com/user-attachments/assets/6159bfd7-217e-4d45-9bbb-b62b2b3c4f46" />
 
 <div align="center">
 
@@ -9,166 +9,147 @@
 
 # Calisto · OcuVision AI
 
-### Public Demo · AI-assisted retinal fundus screening interface
+### Public demo · AI-assisted retinal fundus screening interface
 
-> **Demo notice:** This public GitHub Pages version is for demonstration, portfolio, and academic observation only.  
-> It must use demo/sample data only and must not be connected to the real production database, production backend, private storage, or real patient records.
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Open-244C3E?style=for-the-badge&logo=githubpages&logoColor=white)](https://fahmiimrann.github.io/calisto.github.io/)
+[![GitHub Pages](https://img.shields.io/badge/Hosted_on-GitHub_Pages-222?style=for-the-badge&logo=github)](https://fahmiimrann.github.io/calisto.github.io/)
 
----
+![Frontend](https://img.shields.io/badge/Frontend-React_18_+_Tailwind-38BDF8?logo=react&logoColor=white)
+![Charts](https://img.shields.io/badge/Charts-Chart.js-FF6384?logo=chartdotjs&logoColor=white)
+![Purpose](https://img.shields.io/badge/Purpose-Demo_·_Portfolio_·_Academic-8B5CF6)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-## Public Demo Status
-
-This repository powers the public demo site:
-
-**Demo URL:** `https://fahmiimrann.github.io/calisto.github.io/`
-
-The demo version is intended to show the user interface, workflow, and concept of OcuVision AI without exposing any real industry infrastructure.
-
-| Area | Public GitHub Demo |
-|---|---|
-| Purpose | Demo / FYP / portfolio observation |
-| Data | Fake/sample data only |
-| Patient records | No real patient records |
-| Database | Demo database or local/demo fallback only |
-| Backend | Demo backend or local development backend only |
-| AI engine | Demo/fallback inference or non-sensitive test model only |
-| Production access | Not connected to production |
-| Real clinic use | Not allowed |
+</div>
 
 ---
 
-## Production Separation
-
-The real industry version is maintained separately from this public GitHub Pages demo.
-
-| Area | Public Demo Version | Real Industry Version |
-|---|---|---|
-| URL | `https://fahmiimrann.github.io/calisto.github.io/` | Private production domain, for example `https://app.yourdomain.com` |
-| Repository | Public demo repository | Private production repository |
-| Backend | Demo/local backend only | Secured production backend |
-| Database | `calisto_demo` or demo fallback | `calisto_prod` managed database |
-| Storage | Demo/test storage only | Private secured object storage |
-| Users | Demo/test accounts only | Approved staff accounts only |
-| Patient data | Fake data only | Real records under controlled access |
-| Access control | Demo-level | Production authentication, roles, audit logs |
-| CORS | Demo domain only | Production domain only |
-
-The GitHub Pages demo must never be allowed to call the production API or production database.
+> ### 🔎 Demo notice
+> This is the **public demo** of Calisto (OcuVision AI). It exists for **demonstration, portfolio, and academic observation only** — to show the interface, workflow, and concept.
+> It uses **sample/demo data only** and is **not** connected to any real patient records, production database, or clinical backend. Please do not enter real patient information.
 
 ---
 
 ## Overview
 
-Calisto, also known as OcuVision AI, is an AI-assisted retinal fundus screening interface designed to demonstrate how fundus image upload, preliminary screening output, patient record management, and analytics may be combined in a web-based clinical workflow.
+**Calisto (OcuVision AI)** is a web-based interface that demonstrates how an AI-assisted **retinal fundus screening** workflow could look and feel — from uploading a fundus image, to a preliminary screening result, to patient-record management and analytics — all inside a clean single-page dashboard.
 
-This public repository is **not the production healthcare deployment**. It is a demo/reference version for public observation.
+This repository powers the public demo site and is intended purely for **public observation**. It is **not** a clinical or production healthcare system.
 
-> **Medical disclaimer:** Calisto/OcuVision AI is a decision-support and screening aid prototype. It is not a certified or regulatory-cleared medical device. It must not be used as the sole basis for diagnosis or treatment. All findings require review and confirmation by a qualified healthcare professional.
+> ⚠️ **Medical disclaimer:** Calisto is a concept/prototype and a decision-support demonstration only. It is **not** a certified or regulatory-cleared medical device and must never be used for real diagnosis or treatment. Any real screening must be performed and confirmed by a qualified ophthalmologist.
 
----
+<div align="center">
 
-## Key Features Demonstrated
+### 👉 [Open the live demo](https://fahmiimrann.github.io/calisto.github.io/)
 
-| Module | What it demonstrates |
-|---|---|
-| Overview | Dashboard summary for scans, anomalies, reviewed cases, and AI-related metrics |
-| Diagnostics | Fundus image upload and AI-assisted screening workflow |
-| Patient Registry | Patient record CRUD workflow using condition-coded IDs such as `OCU-DR`, `OCU-G`, `OCU-AMD`, and `OCU-H` |
-| Insights | Case mix, age distribution, and gender split visualised with charts |
-| Settings / AI Core | Account settings and AI model management interface for demonstration |
+</div>
 
 ---
 
-## Conditions Demonstrated
+## ✨ What it demonstrates
 
-| Condition | Demo severity tier | Record prefix |
+| | Module | What you can explore |
+|---|---|---|
+| 📊 | **Overview** | An at-a-glance dashboard summarising scans, anomalies flagged, cases reviewed, and AI-related metrics. |
+| 🔬 | **Diagnostics** | The fundus-image upload and AI screening workflow, with a results report and feature breakdown. |
+| 🗂️ | **Patient Registry** | A patient-record workflow using condition-coded IDs (`OCU-DR`, `OCU-G`, `OCU-AMD`, `OCU-H`). |
+| 📈 | **Insights** | Case mix, age distribution, and gender split visualised with interactive charts. |
+| ⚙️ | **Settings** | Account preferences, device-link labelling, and the AI-model management interface. |
+
+---
+
+## 🧠 Conditions represented
+
+| Condition | Severity tier (demo) | Record prefix |
 |---|---|---|
 | Diabetic Retinopathy | Critical / Alert | `OCU-DR` |
-| Glaucoma | Moderate–Critical | `OCU-G` |
-| Age-related Macular Degeneration | Moderate | `OCU-AMD` |
+| Glaucoma (incl. early indicators) | Moderate–Critical | `OCU-G` |
+| Age-related Macular Degeneration (AMD) | Moderate | `OCU-AMD` |
 | Healthy / Normal | Optimal | `OCU-H` |
 
 ---
 
-## AI Engine Modes
+## 🤖 About the AI in this demo
 
-The codebase may support multiple engine modes depending on local or private deployment configuration.
+The screening output shown in the public demo is illustrative and meant to communicate the **concept and workflow** rather than provide a clinical result. Trained model weights, private inference services, and any real patient data are **not** part of this public repository.
 
-| Engine | Intended use |
-|---|---|
-| Demo Retina Core | Public demo fallback / safe demonstration |
-| MATLAB Bagged Trees | Local development or controlled testing |
-| Python CNN / ResNet-style model | Private production or validated staging only |
-
-The public GitHub Pages demo should use only safe demo mode or a non-sensitive test backend. The production AI backend, trained weights, private model files, and production inference API must not be exposed through this public repository.
+The underlying codebase is structured to support different inference engines in private/local setups, but the public demo intentionally keeps everything to safe, non-sensitive sample behaviour.
 
 ---
 
-## Architecture
-
-### Public Demo Architecture
+## 🏗️ How the demo is built
 
 ```mermaid
 flowchart LR
-    A[GitHub Pages Demo<br/>HTML + CSS + JavaScript] --> B[Demo UI / Demo Backend]
-    B --> C[Fake or demo-only records]
-    B --> D[Demo inference / fallback output]
+    A[Browser<br/>React + Tailwind SPA] --> B[GitHub Pages<br/>static hosting]
+    A --> C[Demo workflow<br/>sample data + illustrative output]
 ```
 
-### Real Industry Architecture
+The demo is a **static single-page app** served by **GitHub Pages**. Everything you see runs in the browser against demo/sample data — there is no real backend, database, or patient storage behind the public site.
 
-The real industry version should be deployed separately:
+---
 
-```mermaid
-flowchart LR
-    A[Production Frontend<br/>Private domain] --> B[Secured Backend API]
-    B --> C[(Production Database<br/>calisto_prod)]
-    B --> D[Private Object Storage<br/>fundus images]
-    B --> E[Validated AI Inference Service]
-    B --> F[Audit Logs]
+## 🛠️ Tech stack
+
+- **Frontend:** React 18 (via Babel standalone), Tailwind CSS, Chart.js, Font Awesome, Plus Jakarta Sans
+- **Hosting:** GitHub Pages (static frontend)
+- **Data (demo):** In-browser sample/demo data only
+
+---
+
+## 🚀 Try it
+
+No installation required — just open the live demo:
+
+**➡️ https://fahmiimrann.github.io/calisto.github.io/**
+
+### Run the interface locally (optional)
+
+Because the public demo is a static page, you can preview it with any simple static server:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/fahmiimrann/calisto.github.io.git
+cd calisto.github.io
+
+# 2. Serve it locally (choose any one)
+python -m http.server 3000
+#   or
+npx serve .
 ```
 
-The public GitHub demo and the production system must use different domains, different environment variables, different database users, and different databases.
+Then open **http://localhost:3000** in your browser.
+
+> This local preview shows the **demo interface only**. It is not wired to any real backend, database, or AI service.
 
 ---
 
-## Tech Stack
+## 📁 Project structure (demo)
 
-| Layer | Demo / Development |
-|---|---|
-| Frontend | React 18 via Babel standalone, Tailwind CSS, Chart.js, Font Awesome |
-| Backend | Node.js, Express, Multer, CORS, dotenv |
-| Data layer | MySQL, Supabase, or local JSON fallback depending on environment |
-| AI integration | Demo engine, MATLAB runner, or Python runner depending on environment |
-| Demo hosting | GitHub Pages frontend |
-
-Production deployments should use private backend hosting, managed database, private object storage, HTTPS, audit logging, and role-based access control.
+```
+calisto.github.io/
+├── index.html            # Single-page React frontend (the whole demo UI)
+├── Calisto Logo.png      # Branding
+├── Background_Video.mp4  # Login backdrop
+└── README.md
+```
 
 ---
 
+## 🗺️ Roadmap (demo scope)
 
-## Roadmap
-
-- Separate demo and production environments completely
-- Add full role-based access control
-- Protect model upload and model selection as admin-only
-- Add audit logging for login, upload, diagnosis, record view/edit/delete, export, and model changes
-- Move production images to private object storage
-- Add exportable PDF patient reports
-- Add privacy notice and patient consent workflow
-- Add model validation report with accuracy, sensitivity, specificity, precision, recall, F1-score, and confusion matrix
+- [ ] Exportable sample PDF reports
+- [ ] Multi-language interface
+- [ ] Additional demo condition examples
+- [ ] Accessibility polish (keyboard + screen-reader passes)
 
 ---
 
-## License
+## 📄 License
 
-Released under the MIT License.
-
-Built for AI-assisted eye-health screening workflow demonstration.
-
+Released under the **MIT License**. Provided for demonstration and educational purposes only.
 
 <div align="center">
 
-Built with care for accessible eye-health screening · **[Open Calisto →](https://fahmiimrann.github.io/calisto.github.io/)**
+Built with care to demonstrate accessible eye-health screening · **[Open Calisto →](https://fahmiimrann.github.io/calisto.github.io/)**
 
 </div>
