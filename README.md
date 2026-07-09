@@ -9,217 +9,306 @@
 
 # Calisto · OcuVision AI
 
-### Premium Ophthalmic Intelligence — AI-powered retinal fundus screening in your browser
+### Public Demo · AI-assisted retinal fundus screening interface
 
-[![Live App](https://img.shields.io/badge/Live_App-Open-244C3E?style=for-the-badge&logo=githubpages&logoColor=white)](https://fahmiimrann.github.io/calisto.github.io/)
-[![GitHub Pages](https://img.shields.io/badge/Hosted_on-GitHub_Pages-222?style=for-the-badge&logo=github)](https://fahmiimrann.github.io/calisto.github.io/)
+> **Demo notice:** This public GitHub Pages version is for demonstration, portfolio, and academic observation only.  
+> It must use demo/sample data only and must not be connected to the real production database, production backend, private storage, or real patient records.
 
-![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)
-![Frontend](https://img.shields.io/badge/Frontend-React_18_+_Tailwind-38BDF8?logo=react&logoColor=white)
-![AI Engine](https://img.shields.io/badge/AI-Python_ResNet50_CNN-EE4C2C?logo=pytorch&logoColor=white)
-![Storage](https://img.shields.io/badge/Storage-MySQL-4479A1?logo=mysql&logoColor=white)
-![Backend](https://img.shields.io/badge/Backend-EC2_·_Nginx_·_PM2_·_Cloudflare-FF9900?logo=amazonaws&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-blue)
+---
 
-</div>
+## Public Demo Status
+
+This repository powers the public demo site:
+
+**Demo URL:** `https://fahmiimrann.github.io/calisto.github.io/`
+
+The demo version is intended to show the user interface, workflow, and concept of OcuVision AI without exposing any real industry infrastructure.
+
+| Area | Public GitHub Demo |
+|---|---|
+| Purpose | Demo / FYP / portfolio observation |
+| Data | Fake/sample data only |
+| Patient records | No real patient records |
+| Database | Demo database or local/demo fallback only |
+| Backend | Demo backend or local development backend only |
+| AI engine | Demo/fallback inference or non-sensitive test model only |
+| Production access | Not connected to production |
+| Real clinic use | Not allowed |
+
+---
+
+## Production Separation
+
+The real industry version is maintained separately from this public GitHub Pages demo.
+
+| Area | Public Demo Version | Real Industry Version |
+|---|---|---|
+| URL | `https://fahmiimrann.github.io/calisto.github.io/` | Private production domain, for example `https://app.yourdomain.com` |
+| Repository | Public demo repository | Private production repository |
+| Backend | Demo/local backend only | Secured production backend |
+| Database | `calisto_demo` or demo fallback | `calisto_prod` managed database |
+| Storage | Demo/test storage only | Private secured object storage |
+| Users | Demo/test accounts only | Approved staff accounts only |
+| Patient data | Fake data only | Real records under controlled access |
+| Access control | Demo-level | Production authentication, roles, audit logs |
+| CORS | Demo domain only | Production domain only |
+
+The GitHub Pages demo must never be allowed to call the production API or production database.
 
 ---
 
 ## Overview
 
-**Calisto (OcuVision AI)** is a production, web-based screening platform that analyzes **retinal fundus images** and flags signs of common eye diseases in seconds. It pairs a polished, glassmorphic single-page dashboard with a real AI inference backend.
+Calisto, also known as OcuVision AI, is an AI-assisted retinal fundus screening interface designed to demonstrate how fundus image upload, preliminary screening output, patient record management, and analytics may be combined in a web-based clinical workflow.
 
-The **live deployment** runs the **Python End-to-End ResNet50 CNN** on an always-on cloud server (AWS EC2 → Nginx → PM2-managed Node.js, behind Cloudflare HTTPS), backed by a shared **MySQL** database. The same codebase can also run a **MATLAB Bagged Trees** classifier locally, and ships with a deterministic demo engine as a graceful fallback. Each scan returns genuine feature extraction (GLCM texture, intensity statistics, vessel morphology, optic-nerve-head cup-to-disc ratio) alongside the disease classification.
+This public repository is **not the production healthcare deployment**. It is a demo/reference version for public observation.
 
-> ⚠️ **Medical disclaimer:** Calisto is a decision-support and screening aid, **not** a certified or regulatory-cleared medical device. It must not be used as the sole basis for diagnosis or treatment. All findings require confirmation by a qualified ophthalmologist.
-
-<div align="center">
-
-### 👉 [Launch the live app](https://fahmiimrann.github.io/calisto.github.io/)
-
-</div>
+> **Medical disclaimer:** Calisto/OcuVision AI is a decision-support and screening aid prototype. It is not a certified or regulatory-cleared medical device. It must not be used as the sole basis for diagnosis or treatment. All findings require review and confirmation by a qualified healthcare professional.
 
 ---
 
-## ✨ Key Features
+## Key Features Demonstrated
 
-| | Module | What it does |
-|---|---|---|
-| 📊 | **Overview** | At-a-glance dashboard — scans today, anomalies detected, cases reviewed, and live AI-accuracy metrics. |
-| 🔬 | **Diagnostics** | Upload a fundus image and run AI screening; per-scan engine picker (MATLAB / Python / Demo) with rich feature breakdowns. |
-| 🗂️ | **Patient Registry** | Full CRUD on patient records with condition-coded IDs (`OCU-DR`, `OCU-G`, `OCU-AMD`, `OCU-H`) and password-protected edits/deletes. |
-| 📈 | **Insights** | Analytics on case mix, age distribution, and gender split rendered with Chart.js. |
-| ⚙️ | **Settings / AI Core** | Manage your staff account, link a local device, configure data privacy, and upload / activate AI models. |
+| Module | What it demonstrates |
+|---|---|
+| Overview | Dashboard summary for scans, anomalies, reviewed cases, and AI-related metrics |
+| Diagnostics | Fundus image upload and AI-assisted screening workflow |
+| Patient Registry | Patient record CRUD workflow using condition-coded IDs such as `OCU-DR`, `OCU-G`, `OCU-AMD`, and `OCU-H` |
+| Insights | Case mix, age distribution, and gender split visualised with charts |
+| Settings / AI Core | Account settings and AI model management interface for demonstration |
 
 ---
 
-## 🧠 Conditions Detected
+## Conditions Demonstrated
 
-| Condition | Severity tier | Record prefix |
+| Condition | Demo severity tier | Record prefix |
 |---|---|---|
 | Diabetic Retinopathy | Critical / Alert | `OCU-DR` |
-| Glaucoma (incl. early indicators) | Moderate–Critical | `OCU-G` |
-| Age-related Macular Degeneration (AMD) | Moderate | `OCU-AMD` |
+| Glaucoma | Moderate–Critical | `OCU-G` |
+| Age-related Macular Degeneration | Moderate | `OCU-AMD` |
 | Healthy / Normal | Optimal | `OCU-H` |
 
 ---
 
-## 🤖 AI Engines
+## AI Engine Modes
 
-Calisto can route each scan to one of three interchangeable engines:
+The codebase may support multiple engine modes depending on local or private deployment configuration.
 
-| Engine | Type | Notes |
-|---|---|---|
-| **Python ResNet50 CNN** ⭐ | `python_predict.py --engine cnn` | End-to-end deep-learning classifier — **the engine running in production**. |
-| **MATLAB Bagged Trees** | `99_BaggedTreesModel.mat` | Full feature pipeline; runs via MATLAB or a licence-free compiled `.exe` + MATLAB Runtime (local environments). |
-| **Demo Retina Core** | built-in | Deterministic baseline used as a fallback when no inference runtime is reachable — keeps the public site fully interactive. |
+| Engine | Intended use |
+|---|---|
+| Demo Retina Core | Public demo fallback / safe demonstration |
+| MATLAB Bagged Trees | Local development or controlled testing |
+| Python CNN / ResNet-style model | Private production or validated staging only |
+
+The public GitHub Pages demo should use only safe demo mode or a non-sensitive test backend. The production AI backend, trained weights, private model files, and production inference API must not be exposed through this public repository.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
+
+### Public Demo Architecture
 
 ```mermaid
 flowchart LR
-    A[Browser SPA<br/>React + Tailwind<br/>GitHub Pages] -->|HTTPS| CF[Cloudflare<br/>TLS + CDN]
-    CF --> NX[Nginx<br/>reverse proxy]
-    NX --> B[Node.js + Express<br/>PM2 · server.js]
-    B --> C{Active Engine}
-    C -->|python| E[Python ResNet50 CNN<br/>PyTorch CPU]
-    C -->|.mat / .exe| D[MATLAB / Runtime<br/>local only]
-    C -->|fallback| F[Demo Retina Core]
-    B --> G[(MySQL<br/>users + records)]
+    A[GitHub Pages Demo<br/>HTML + CSS + JavaScript] --> B[Demo UI / Demo Backend]
+    B --> C[Fake or demo-only records]
+    B --> D[Demo inference / fallback output]
 ```
 
-The browser app talks to the backend through `API_BASE_URL`. In production it reaches the live CNN backend; if that backend is unreachable it gracefully degrades to the demo engine, so the GitHub Pages site always loads.
+### Real Industry Architecture
+
+The real industry version should be deployed separately:
+
+```mermaid
+flowchart LR
+    A[Production Frontend<br/>Private domain] --> B[Secured Backend API]
+    B --> C[(Production Database<br/>calisto_prod)]
+    B --> D[Private Object Storage<br/>fundus images]
+    B --> E[Validated AI Inference Service]
+    B --> F[Audit Logs]
+```
+
+The public GitHub demo and the production system must use different domains, different environment variables, different database users, and different databases.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Frontend:** React 18 (via Babel standalone), Tailwind CSS, Chart.js, Font Awesome, Plus Jakarta Sans
-- **Backend:** Node.js, Express, Multer (uploads), CORS, dotenv
-- **AI:** Python (ResNet50 CNN, PyTorch) in production · MATLAB Bagged Trees / Compiler Runtime for local runs
-- **Data:** MySQL (production single source of truth) · Supabase or local JSON supported as alternatives
-- **Infrastructure:** AWS EC2 (Ubuntu) · Nginx reverse proxy · PM2 process manager · Cloudflare (TLS/CDN)
-- **Hosting:** GitHub Pages (frontend) + EC2 (backend API)
-
----
-
-## 🔒 Security
-
-Production hardening built into the backend:
-
-| Area | Measure |
+| Layer | Demo / Development |
 |---|---|
-| Passwords | Hashed with **scrypt** (salted, constant-time compare); never stored or returned in plaintext. Legacy records auto-upgrade on next login. |
-| Transport | **HTTPS everywhere** via Cloudflare TLS + **HSTS**; backend trusts the proxy chain for correct client IPs. |
-| Brute force | **Rate limiting** on `/api/login` and `/api/register` (per-IP). |
-| Headers | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`; `X-Powered-By` disabled. |
-| Uploads | Image-only filter, **15 MB** size cap, single-file, in-memory (no disk persistence of raw uploads beyond transient inference). |
-| Access control | Bearer-token sessions; destructive record actions require password re-verification. |
-| CORS | Strict allow-list of trusted origins (configurable via `EXTRA_CORS_ORIGINS`). |
-| Secrets | Credentials kept in a git-ignored `.env`; database reachable only over localhost / SSH tunnel. |
+| Frontend | React 18 via Babel standalone, Tailwind CSS, Chart.js, Font Awesome |
+| Backend | Node.js, Express, Multer, CORS, dotenv |
+| Data layer | MySQL, Supabase, or local JSON fallback depending on environment |
+| AI integration | Demo engine, MATLAB runner, or Python runner depending on environment |
+| Demo hosting | GitHub Pages frontend |
+
+Production deployments should use private backend hosting, managed database, private object storage, HTTPS, audit logging, and role-based access control.
 
 ---
 
-## 🚀 Getting Started (Local)
+## Security Position
 
-### Use the live app
-No installation required — just open **[the live site](https://fahmiimrann.github.io/calisto.github.io/)**. This GitHub Pages version is a public demo only. It uses fake/sample data and does not connect to the real production database.
+This public repository is safe for observation only when configured as a demo.
 
-### Run locally with the AI backend
+### Public demo rules
+
+- Do not store real patient records.
+- Do not upload real fundus images.
+- Do not commit `.env` files.
+- Do not commit production database credentials.
+- Do not commit production API keys.
+- Do not expose production backend URLs in public frontend code.
+- Do not allow the GitHub Pages demo origin to access the production backend.
+- Use fake/sample records only.
+
+### Production rules
+
+A real industry deployment must be separated from this public repository and should include:
+
+- Private production repository
+- Production-only backend domain
+- Managed production database such as `calisto_prod`
+- Separate database user with limited privileges
+- Private image/object storage
+- HTTPS only
+- Role-based access control
+- Protected model management endpoints
+- Disabled public registration
+- Audit logs for sensitive actions
+- Backup and restore process
+- Privacy notice, patient consent, AI disclaimer, and data retention policy
+
+---
+
+## Environment Separation
+
+### Demo environment example
+
+```env
+NODE_ENV=demo
+DB_BACKEND=mysql
+MYSQL_DATABASE=calisto_demo
+ENABLE_SEED_DATA=true
+ALLOWED_ORIGINS=https://fahmiimrann.github.io
+```
+
+### Production environment example
+
+```env
+NODE_ENV=production
+DB_BACKEND=mysql
+MYSQL_DATABASE=calisto_prod
+ENABLE_SEED_DATA=false
+DISABLE_PUBLIC_REGISTRATION=true
+ALLOWED_ORIGINS=https://app.yourdomain.com
+```
+
+The production `.env` file must never be committed to GitHub.
+
+Use `.env.example` for placeholders only.
+
+---
+
+## Recommended `.gitignore`
+
+```gitignore
+.env
+.env.local
+.env.production
+.env.demo
+node_modules
+data
+uploaded-models
+models
+*.pem
+*.key
+```
+
+---
+
+## Local Development
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/fahmiimrann/calisto.github.io.git
 cd calisto.github.io
-
-# 2. Install backend dependencies
 npm install
-
-# 3. (Optional) configure your environment
-#    Create a .env file – see the variables below.
-
-# 4. Start the server
+npm install mysql2
 npm start
 ```
 
-Then open **http://localhost:3000** to use the site against your local backend.
+Then open:
 
-### Environment variables (`.env`)
-
-```env
-PORT=3000
-
-# Storage — choose ONE backend:
-# (a) MySQL (production single source of truth)
-DB_BACKEND=mysql
-MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
-MYSQL_USER=myvision-db
-MYSQL_PASSWORD= *********
-MYSQL_DATABASE=myvision-db
-
-# (b) Supabase
-# SUPABASE_URL=https://yourproject.supabase.co
-# SUPABASE_SERVICE_KEY=your-service-key
-# (c) Local JSON files (default if neither above is set)
-
-# AI runtime
-# Python CNN (production): point to the venv interpreter + models dir
-# OCU_PYTHON_EXEC=/path/to/python/.venv/bin/python
-# OCU_MODELS_DIR=/path/to/models
-# …or MATLAB locally (licence-free compiled exe, or full MATLAB):
-# OCU_COMPILED_EXE=C:\path\to\dist\ocu_main.exe
-# MATLAB_EXEC=C:\Program Files\MATLAB\R2025b\bin\matlab.exe
-
-# Extra CORS origins (comma-separated), e.g. your GitHub Pages URL
-# EXTRA_CORS_ORIGINS=https://fahmiimrann.github.io
+```text
+http://localhost:3000
 ```
 
-> To develop locally against the shared production MySQL, open an SSH tunnel to the
-> database first (e.g. `db-tunnel.ps1`) so it stays the single source of truth.
-
-Verify the backend at **http://localhost:3000/api/health**.
+For local production-style testing, use a local or managed MySQL database such as `calisto_prod`, but do not expose it to the public demo.
 
 ---
 
-## 📡 API Reference (selected)
+## API Reference
 
-| Method | Endpoint | Description |
+Selected backend endpoints may include:
+
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/api/health` | Backend + runtime status |
-| `POST` | `/api/analyze` | Run AI screening on an uploaded fundus image |
-| `POST` | `/api/login` · `/api/register` · `/api/logout` | Authentication |
-| `GET` `POST` `PATCH` `DELETE` | `/api/records` | Patient record CRUD (auth required) |
-| `GET` `POST` | `/api/models` · `/api/models/select` | AI model registry |
+| `GET` | `/api/health` | Backend/runtime status |
+| `POST` | `/api/login` | User login |
+| `POST` | `/api/register` | Registration, should be disabled in production |
+| `POST` | `/api/analyze` | Fundus image screening, should require authentication |
+| `GET/POST/PATCH/DELETE` | `/api/records` | Patient record CRUD, should require authentication |
+| `GET/POST` | `/api/models` | AI model registry, should be admin-only |
+| `POST` | `/api/models/select` | Select active model, should be admin-only |
 
 ---
 
-## ☁️ Deployment
+## Deployment Guidance
 
-- **Frontend:** published automatically to **GitHub Pages** at the live URL above on every push to `main`. The live site points at the production backend via `TUNNEL_API_BASE_URL` in `index.html`; if that's blank or unreachable, it falls back to the demo backend so the page always works.
-- **Backend:** runs on **AWS EC2 (Ubuntu)** as an always-on service:
-  - **Nginx** reverse-proxies the API domain to the Node app.
-  - **PM2** keeps `server.js` alive and restarts it on boot.
-  - **Cloudflare** terminates TLS and fronts the domain (HTTPS + CDN).
-  - **Python venv (PyTorch, CPU)** serves the ResNet50 CNN; a swap file covers the model's peak memory on small instances.
-  - **MySQL** stores users and patient records (schema auto-creates and seeds on first boot).
+### Public demo deployment
 
----
+The public GitHub Pages deployment should remain demo-only.
 
-## 📁 Project Structure
-
+```text
+GitHub Pages → demo UI → fake/demo data only
 ```
+
+### Real industry deployment
+
+The real industry version should be deployed separately.
+
+```text
+Private frontend domain
++ secured backend API
++ managed production database
++ private object storage
++ validated AI service
++ audit logging
+```
+
+Recommended production separation:
+
+```text
+Public GitHub demo:
+https://fahmiimrann.github.io/calisto.github.io/
+
+Production:
+https://app.yourdomain.com
+```
+
+Do not point the GitHub Pages demo to the production API.
+
+---
+
+## Project Structure
+
+```text
 calisto.github.io/
-├── index.html            # Single-page React frontend (the whole UI)
+├── index.html            # Single-page frontend
 ├── server.js             # Express API + static file server
 ├── matlab-runner.js      # MATLAB / compiled-exe inference bridge
-├── python-runner.js      # Python CNN inference bridge
+├── python-runner.js      # Python inference bridge
 ├── db.js                 # MySQL / Supabase / local-JSON data layer
-├── python/               # Inference + training scripts (ResNet50, U-Net, features)
-├── models/               # Trained weights (.pth / .pkl) — gitignored
-├── db-tunnel.ps1         # Opens an SSH tunnel to the shared MySQL for local dev
+├── models/               # Trained weights - should be gitignored
 ├── Calisto Logo.png      # Branding
 ├── Background_Video.mp4  # Login backdrop
 └── package.json
@@ -227,18 +316,25 @@ calisto.github.io/
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-- [ ] Exportable PDF patient reports
-- [ ] Multi-language UI
-- [ ] Expanded condition coverage
-- [ ] Role-based access control for clinics
+- Separate demo and production environments completely
+- Add full role-based access control
+- Protect model upload and model selection as admin-only
+- Add audit logging for login, upload, diagnosis, record view/edit/delete, export, and model changes
+- Move production images to private object storage
+- Add exportable PDF patient reports
+- Add privacy notice and patient consent workflow
+- Add model validation report with accuracy, sensitivity, specificity, precision, recall, F1-score, and confusion matrix
 
 ---
 
-## 📄 License
+## License
 
 Released under the MIT License.
+
+Built for AI-assisted eye-health screening workflow demonstration.
+
 
 <div align="center">
 
