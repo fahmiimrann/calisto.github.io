@@ -157,7 +157,7 @@ DB_BACKEND=mysql
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=myvision-db
-MYSQL_PASSWORD=your-password
+MYSQL_PASSWORD= *********
 MYSQL_DATABASE=myvision-db
 
 # (b) Supabase
