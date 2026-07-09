@@ -125,7 +125,7 @@ Production hardening built into the backend:
 ## 🚀 Getting Started (Local)
 
 ### Use the live app
-No installation required — just open **[the live site](https://fahmiimrann.github.io/calisto.github.io/)**. It connects to the production backend and runs the real **Python ResNet50 CNN** (first scan after an idle period takes ~25–30 s while the model warms up on CPU).
+No installation required — just open **[the live site](https://fahmiimrann.github.io/calisto.github.io/)**. This GitHub Pages version is a public demo only. It uses fake/sample data and does not connect to the real production database.
 
 ### Run locally with the AI backend
 
