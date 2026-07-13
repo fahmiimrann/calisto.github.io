@@ -33,32 +33,6 @@
             overflow-x: hidden;
         }
 
-        .video-backdrop {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            overflow: hidden;
-            background: #f8f5ef;
-            pointer-events: none;
-        }
-
-        .video-backdrop video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            opacity: 0.35;
-            filter: saturate(0.82) contrast(1.02) brightness(1.08);
-        }
-
-        .video-overlay {
-            position: absolute;
-            inset: 0;
-            z-index: 1;
-            background:
-                linear-gradient(135deg, rgba(248,245,239,0.9), rgba(255,255,255,0.78) 42%, rgba(238,246,242,0.88)),
-                radial-gradient(circle at 80% 12%, rgba(221,235,255,0.55), transparent 34%);
-        }
-
         body::before,
         body::after {
             content: '';
@@ -211,7 +185,6 @@
                 overflow: visible !important;
             }
             body::before, body::after { display: none !important; }
-            .video-backdrop, .video-overlay { display: none !important; }
 
             body.ocu-printing * { visibility: hidden !important; }
             body.ocu-printing .ocu-print-area,
@@ -316,12 +289,6 @@
     </style>
 </head>
 <body>
-<div class="video-backdrop" aria-hidden="true">
-    <video autoplay muted loop playsinline poster="Background_Video.mp4">
-        <source src="Background_Video.mp4" type="video/mp4">
-    </video>
-    <div class="video-overlay"></div>
-</div>
 <!-- Global SVG filters used by the fundus vessel-segmentation panels.
      `ocu-vessel-extract` is the *fallback* used only when the MATLAB
      pipeline did not ship back a real vessel mask (demo records / legacy
