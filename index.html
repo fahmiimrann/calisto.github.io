@@ -286,6 +286,15 @@
                 print-color-adjust: exact !important;
             }
         }
+
+        /* Embedded mode (inside the Calisto host app, iframe/webview). Trims the
+           outer whitespace so the app fits neatly in a smaller frame. The nav is
+           kept by default; a host that provides its own navigation can hide the
+           sidebar by adding ?embed=1&chrome=0 (see .ocu-embed-chromeless). */
+        body.ocu-embed main.flex-1 { padding: 1.5rem !important; }
+        body.ocu-embed .app-shell { min-height: 100vh; }
+        body.ocu-embed-chromeless .glass-sidebar { display: none !important; }
+        body.ocu-embed-chromeless main.flex-1 { margin-left: 0 !important; }
     </style>
 </head>
 <body>
@@ -388,7 +397,27 @@ function resolveApiBaseUrl() {
 const API_BASE_URL = resolveApiBaseUrl();
 const AUTH_TOKEN_KEY = 'ocuvision-auth-token';
 
+// DEMO MODE — a fully self-contained public sandbox.
+// The GitHub Pages mirror (fahmiimrann.github.io) must NEVER read or write the
+// real production database. When we detect a *.github.io host (or ?demo=1) the
+// app runs entirely on bundled sample data served by demoApiRequest() below —
+// no network calls to any backend are made. This keeps the public "spectate"
+// site 100% separated from the live myvision-dev.calisto.co data.
+// Escape hatch: append ?live=1 to force the real backend even on github.io.
+const DEMO_MODE = (() => {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('live') === '1') return false;
+        if (params.get('demo') === '1') return true;
+        const host = (window.location && window.location.hostname) || '';
+        return host.endsWith('github.io');
+    } catch (e) { return false; }
+})();
+
 function isBackendConfigured() {
+    // In demo mode there is no backend — the inline demo generators (analyze,
+    // model library) and demoApiRequest() serve everything locally.
+    if (DEMO_MODE) return false;
     if (!API_BASE_URL) return true;
     return API_BASE_URL.trim() && !API_BASE_URL.includes("your-render-backend-name");
 }
@@ -403,7 +432,181 @@ function setAuthToken(token) {
     } catch (e) {}
 }
 
+// ===========================================================================
+// Calisto host-app integration (embed + SSO + events)
+// ---------------------------------------------------------------------------
+// Lets OcuVision run embedded inside the Calisto app (iframe or mobile webview):
+//   - Single sign-on: the host injects a session token (postMessage or ?token=).
+//   - Events: OcuVision notifies the host of lifecycle + screening events.
+// SECURITY: only messages from CALISTO_TRUSTED_ORIGINS are honoured for SSO.
+// >>> Set your real Calisto origin(s) here (or via window.OCU_TRUSTED_ORIGINS). <<<
+const CALISTO_TRUSTED_ORIGINS = (() => {
+    const list = [
+        // 'https://app.calisto.co',
+        // 'https://calisto.co',
+    ];
+    try { if (Array.isArray(window.OCU_TRUSTED_ORIGINS)) list.push(...window.OCU_TRUSTED_ORIGINS); } catch (e) {}
+    try { if (window.location && window.location.origin && window.location.origin !== 'null') list.push(window.location.origin); } catch (e) {}
+    return Array.from(new Set(list.filter(Boolean)));
+})();
+
+// True when a native mobile WebView bridge (React Native / iOS WKWebView /
+// Android JS interface) is present — i.e. Calisto's mobile app is the host.
+function hasNativeBridge() {
+    try {
+        return !!(window.ReactNativeWebView
+            || (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ocuvision)
+            || window.OcuVisionNative);
+    } catch (e) { return false; }
+}
+
+// True when running inside another app (iframe / mobile WebView) or ?embed=1.
+function isEmbedded() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('embed') === '1') return true;
+        if (hasNativeBridge()) return true;
+        return window.self !== window.top;
+    } catch (e) {
+        // Cross-origin access to window.top throws -> we ARE embedded.
+        return true;
+    }
+}
+
+function isTrustedParentOrigin(origin) {
+    return !!origin && origin !== 'null' && CALISTO_TRUSTED_ORIGINS.includes(origin);
+}
+
+// Emit an event to the host app. Works for BOTH a browser iframe host (Calisto
+// web, via window.parent.postMessage) and a native mobile WebView host (Calisto
+// mobile: React Native / iOS WKWebView / Android JS interface). Payloads are
+// intentionally free of PII (no patient names or images) — just IDs/labels.
+function postToParent(message) {
+    let json = null;
+    try { json = JSON.stringify(message); } catch (e) { json = null; }
+    // 1) Browser iframe host.
+    try {
+        if (window.parent && window.parent !== window) {
+            const targets = CALISTO_TRUSTED_ORIGINS.length ? CALISTO_TRUSTED_ORIGINS : ['*'];
+            for (const t of targets) { try { window.parent.postMessage(message, t); } catch (e) {} }
+        }
+    } catch (e) {}
+    // 2) React Native WebView.
+    try { if (window.ReactNativeWebView && json) window.ReactNativeWebView.postMessage(json); } catch (e) {}
+    // 3) iOS WKWebView message handler named "ocuvision".
+    try {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ocuvision) {
+            window.webkit.messageHandlers.ocuvision.postMessage(message);
+        }
+    } catch (e) {}
+    // 4) Android addJavascriptInterface named "OcuVisionNative".
+    try {
+        if (window.OcuVisionNative && typeof window.OcuVisionNative.postMessage === 'function' && json) {
+            window.OcuVisionNative.postMessage(json);
+        }
+    } catch (e) {}
+}
+
+// ===========================================================================
+// DEMO backend — in-browser mock API for the public GitHub Pages sandbox.
+// Serves auth + patient records from localStorage-backed sample data so the
+// public site is fully interactive without ever contacting the real backend.
+// ===========================================================================
+const DEMO_RECORDS_KEY = 'ocuvision-demo-records';
+const DEMO_USER = {
+    id: 'demo-user', username: 'demo', name: 'Dr. Demo (Public Sandbox)',
+    type: 'admin', email: 'demo@calisto.co', avatar: '',
+    created_at: '2026-01-01T00:00:00.000Z'
+};
+function _demoDaysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+}
+function demoSeedRecords() {
+    return [
+        { id: 'OCU-DEMO-006', patient: 'Amelia Hart',   nric: 'S-DEMO-006', age: 61, gender: 'Female', date: _demoDaysAgo(0),  result: 'Glaucoma',             confidence: '96.6%', doctor: 'Dr. Demo', severity: 'Critical', capture_device: 'Sample dataset (demo)', features: { ONH_CupToDiscRatio: 0.71, GLCM_Contrast: 44.2, Vessel_GVD_pct: 10.1 } },
+        { id: 'OCU-DEMO-005', patient: 'Rajesh Kumar',  nric: 'S-DEMO-005', age: 67, gender: 'Male',   date: _demoDaysAgo(1),  result: 'Diabetic Retinopathy', confidence: '88.3%', doctor: 'Dr. Demo', severity: 'Critical', capture_device: 'Sample dataset (demo)', features: { ONH_CupToDiscRatio: 0.31, GLCM_Contrast: 70.9, Vessel_GVD_pct: 9.4 } },
+        { id: 'OCU-DEMO-004', patient: 'Grace Tan',     nric: 'S-DEMO-004', age: 74, gender: 'Female', date: _demoDaysAgo(2),  result: 'AMD',                  confidence: '95.7%', doctor: 'Dr. Demo', severity: 'Moderate', capture_device: 'Uploaded from local drive', features: { ONH_CupToDiscRatio: 0.25, GLCM_Contrast: 51.3, Vessel_GVD_pct: 11.0 } },
+        { id: 'OCU-DEMO-003', patient: 'David Okoro',   nric: 'S-DEMO-003', age: 45, gender: 'Male',   date: _demoDaysAgo(4),  result: 'Healthy',              confidence: '98.9%', doctor: 'Dr. Demo', severity: 'Healthy',  capture_device: 'Sample dataset (demo)', features: { ONH_CupToDiscRatio: 0.28, GLCM_Contrast: 33.8, Vessel_GVD_pct: 11.8 } },
+        { id: 'OCU-DEMO-002', patient: 'Sofia Marin',   nric: 'S-DEMO-002', age: 52, gender: 'Female', date: _demoDaysAgo(6),  result: 'Early Glaucoma',       confidence: '87.1%', doctor: 'Dr. Demo', severity: 'Moderate', capture_device: 'Sample dataset (demo)', features: { ONH_CupToDiscRatio: 0.58, GLCM_Contrast: 42.0, Vessel_GVD_pct: 10.4 } },
+        { id: 'OCU-DEMO-001', patient: 'Liam Foster',   nric: 'S-DEMO-001', age: 39, gender: 'Male',   date: _demoDaysAgo(9),  result: 'Healthy',              confidence: '99.2%', doctor: 'Dr. Demo', severity: 'Healthy',  capture_device: 'Uploaded from local drive', features: { ONH_CupToDiscRatio: 0.26, GLCM_Contrast: 31.1, Vessel_GVD_pct: 12.1 } }
+    ];
+}
+function demoGetRecords() {
+    try {
+        const raw = localStorage.getItem(DEMO_RECORDS_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    const seed = demoSeedRecords();
+    try { localStorage.setItem(DEMO_RECORDS_KEY, JSON.stringify(seed)); } catch (e) {}
+    return seed;
+}
+function demoSetRecords(list) {
+    try { localStorage.setItem(DEMO_RECORDS_KEY, JSON.stringify(list)); } catch (e) {}
+}
+async function demoApiRequest(path, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    let body = {};
+    if (options.body && typeof options.body === 'string') {
+        try { body = JSON.parse(options.body); } catch (e) { body = {}; }
+    }
+    const clean = path.split('?')[0];
+
+    // --- Auth -------------------------------------------------------------
+    if (clean === '/api/login' && method === 'POST') {
+        return { user: { ...DEMO_USER, name: body.username ? `Dr. ${body.username} (Demo)` : DEMO_USER.name, username: body.username || 'demo' }, token: 'demo-token' };
+    }
+    if (clean === '/api/register' && method === 'POST') {
+        const type = String(body.type || '').toLowerCase() === 'admin' ? 'admin' : (body.type || 'Optometrist');
+        return { user: { ...DEMO_USER, id: 'demo-' + Date.now(), name: body.name || 'New Demo User', username: body.username || 'demo', type }, token: 'demo-token' };
+    }
+    if (clean === '/api/users/me' && method === 'GET') return { user: DEMO_USER };
+    if (clean === '/api/users/me' && method === 'PATCH') return { user: { ...DEMO_USER, ...body } };
+    if (clean === '/api/users/me/password') return { ok: true };
+    if (clean === '/api/auth/verify') return { ok: true };
+    if (clean === '/api/logout') return { ok: true };
+
+    // --- Records ----------------------------------------------------------
+    if (clean === '/api/records' && method === 'GET') return { records: demoGetRecords() };
+    if (clean === '/api/records' && method === 'POST') {
+        const list = demoGetRecords();
+        const rec = { id: 'OCU-DEMO-' + Date.now(), date: _demoDaysAgo(0), doctor: 'Dr. Demo', ...body };
+        list.unshift(rec);
+        demoSetRecords(list);
+        return { record: rec };
+    }
+    const recMatch = clean.match(/^\/api\/records\/(.+)$/);
+    if (recMatch) {
+        const id = decodeURIComponent(recMatch[1]);
+        let list = demoGetRecords();
+        if (method === 'GET') return { record: list.find(r => r.id === id) || null };
+        if (method === 'PATCH') {
+            list = list.map(r => r.id === id ? { ...r, ...body, id } : r);
+            demoSetRecords(list);
+            return { record: list.find(r => r.id === id) };
+        }
+        if (method === 'DELETE') {
+            demoSetRecords(list.filter(r => r.id !== id));
+            return { ok: true };
+        }
+    }
+
+    // --- Models / misc ----------------------------------------------------
+    if (clean === '/api/models' && method === 'GET') {
+        return { models: [{ id: 'python-cnn-resnet50', name: 'Python AI - End-to-End ResNet50 CNN (Demo)', originalName: 'Demo build', type: 'python-cnn', size: 0, active: true }], activeModel: { id: 'python-cnn-resnet50', name: 'Python AI - End-to-End ResNet50 CNN (Demo)' } };
+    }
+    if (clean === '/api/health') return { status: 'Online', project: 'OcuVision AI API (Demo)', database: { ok: true, backend: 'demo' }, python: { cnnReady: true } };
+    if (clean === '/api/audit') return { logs: [] };
+    if (clean === '/api/errors') return { errors: [] };
+
+    return {};
+}
+
 async function apiRequest(path, options = {}) {
+    // Public sandbox: never hit the network — serve from the in-browser mock.
+    if (DEMO_MODE) return demoApiRequest(path, options);
+
     const headers = new Headers(options.headers || {});
     const token = getAuthToken();
     if (token && !headers.has('Authorization')) {
@@ -414,6 +617,14 @@ async function apiRequest(path, options = {}) {
     const data = contentType.includes("application/json") ? await response.json() : {};
 
     if (!response.ok) {
+        // A 401 on an authenticated request means the session token expired or was
+        // revoked server-side. Clear it and tell the app to return to the login
+        // screen so the user can re-authenticate — otherwise the UI looks logged
+        // in but every action silently fails with "Authentication required".
+        if (response.status === 401 && token) {
+            setAuthToken(null);
+            try { window.dispatchEvent(new CustomEvent('ocuvision-session-expired')); } catch (e) {}
+        }
         const err = new Error(data.error || data.message || "Backend request failed.");
         err.status = response.status;
         err.payload = data;
@@ -455,6 +666,8 @@ function normalizeAnalysisResult(data, fileName) {
         notes: data.notes || data.recommendation || "AI backend analysis completed. Expert clinical validation is recommended.",
         severity,
         features: data.features && typeof data.features === 'object' ? data.features : null,
+        glaucomaSuspected: Boolean(data.glaucomaSuspected),
+        cdr: (typeof data.cdr === 'number') ? data.cdr : null,
         model: data.model || null,
         fileName
     };
@@ -653,13 +866,14 @@ function rangeVolume(records, startYMD, endYMD) {
     return { series: series.map(({ label, count }) => ({ label, count })), total, avg: total / spanDays, todayCount };
 }
 
-// Ophthalmic-epidemiology age bins (20-year groups).
+// Ophthalmic-epidemiology age bins. Focused on the screening-relevant adult
+// range: under-30s are excluded from the peak analysis per clinical request.
 function ageGroupBuckets(records) {
     const bins = [
-        { label: '0-19',  min: 0,  max: 19,  count: 0 },
-        { label: '20-39', min: 20, max: 39,  count: 0 },
-        { label: '40-59', min: 40, max: 59,  count: 0 },
-        { label: '60-79', min: 60, max: 79,  count: 0 },
+        { label: '30-49', min: 30, max: 49,  count: 0 },
+        { label: '50-59', min: 50, max: 59,  count: 0 },
+        { label: '60-69', min: 60, max: 69,  count: 0 },
+        { label: '70-79', min: 70, max: 79,  count: 0 },
         { label: '80+',   min: 80, max: 200, count: 0 }
     ];
     for (const r of records) {
@@ -767,7 +981,7 @@ function useToast() {
     return [ToastComponent, triggerToast];
 }
 
-const Sidebar = ({ currentView, setView, onLogout, user }) => {
+const Sidebar = ({ currentView, setView, onLogout, user, open, onClose }) => {
     const menuItems = [
         { id: 'dashboard', label: 'Overview', icon: 'fa-grid-2' },
         { id: 'screening', label: 'Diagnostics', icon: 'fa-microscope' },
@@ -775,20 +989,29 @@ const Sidebar = ({ currentView, setView, onLogout, user }) => {
         { id: 'analytics', label: 'Insights', icon: 'fa-chart-line' },
         { id: 'settings', label: 'Settings', icon: 'fa-sliders' },
     ];
+    // Navigating on mobile also closes the drawer.
+    const go = (id) => { setView(id); onClose && onClose(); };
     return (
-        <aside className="w-72 glass-sidebar h-screen fixed left-0 top-0 flex flex-col p-8 z-20">
+        <aside className={`w-72 max-w-[80vw] glass-sidebar h-screen fixed left-0 top-0 flex flex-col p-8 z-40 transform transition-transform duration-300 ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+            <button
+                onClick={onClose}
+                className="lg:hidden absolute top-5 right-5 w-9 h-9 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200"
+                aria-label="Close menu"
+            >
+                <i className="fa-solid fa-xmark"></i>
+            </button>
             <div className="mb-12 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-sm border border-slate-100">
                     <img src="Calisto Logo.png" alt="Calisto" className="w-full h-full object-contain" />
                 </div>
-                <span className="text-xl font-bold tracking-tight text-[#1a1a1e] cursor-pointer" onClick={() => setView('dashboard')}>OCUVISION</span>
+                <span className="text-xl font-bold tracking-tight text-[#1a1a1e] cursor-pointer" onClick={() => go('dashboard')}>OCUVISION</span>
             </div>
             <nav className="flex-1 space-y-2">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-bold mb-4 ml-2">Platform</p>
                 {menuItems.map(item => (
                     <button
                         key={item.id}
-                        onClick={() => setView(item.id)}
+                        onClick={() => go(item.id)}
                         className={`nav-link w-full flex items-center gap-4 px-4 py-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 ${
                             currentView === item.id ? 'active text-slate-900 bg-slate-50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                         }`}
@@ -865,7 +1088,7 @@ function NotificationBell({ notifications, clearAll }) {
                                 <i className={`fa-solid ${n.message.startsWith("Critical") ? "fa-triangle-exclamation text-red-500" : "fa-bolt-lightning text-blue-400"}`}></i>
                                 <div className="flex-1">
                                     <p className="text-xs text-slate-700">{n.message}</p>
-                                    <span className="text-[10px] text-slate-400">{n.time} ago</span>
+                                    <span className="text-[10px] text-slate-400">{n.time}</span>
                                 </div>
                             </div>
                         ))}
@@ -928,7 +1151,7 @@ function GlobalSearch({ records = MOCK_RECORDS, onPickRecord, setView }) {
     }
 
     return (
-        <div className="relative w-80" ref={containerRef}>
+        <div className="relative w-full sm:w-80" ref={containerRef}>
             <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
             <input
                 type="search"
@@ -1162,6 +1385,9 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     const [imgSrc, setImgSrc] = useState(null);
     const [progress, setProgress] = useState(0);
     const [result, setResult] = useState(null);
+    // Holds a human-readable reason when a scan fails, so the screen never just
+    // silently returns to the input step with no explanation.
+    const [scanError, setScanError] = useState(null);
     const [device, setDevice] = useState('');
     // Capture device model recorded on the saved record when the scan is run
     // via "Connect Local Camera"; null for uploaded files.
@@ -1230,6 +1456,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
     async function startScan(source, label, imageFile = file, scanDetails = null) {
         setImgSrc(source || imgSrc);
         setFile(imageFile || file || { name: label || 'Captured image' });
+        setScanError(null);
         setStage('scanning');
         setProgress(0);
         const fileName = label || imageFile?.name || file?.name || 'screening-image.png';
@@ -1320,8 +1547,13 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                         showToast && showToast('Scan complete, but patient details missing — record was not saved.');
                     }
                     } catch (err) {
+                        const raw = err.message || 'Backend analysis failed.';
+                        const friendly = /timed out|timeout/i.test(raw)
+                            ? 'The AI model took too long to respond and the scan was cancelled. The image was not saved. Please try again — the first scan after the server starts is the slowest.'
+                            : raw;
+                        setScanError(friendly);
                         setStage('connect');
-                        showToast && showToast(err.message || 'Backend analysis failed.');
+                        showToast && showToast(friendly);
                     }
                 }, 350);
             }
@@ -1353,6 +1585,7 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
         setFile(null);
         setImgSrc(null);
         setResult(null);
+        setScanError(null);
         setProgress(0);
         setDevice('');
         setCaptureDevice(null);
@@ -1416,6 +1649,18 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                 <h1 className="text-3xl font-bold text-[#1a1a1e] tracking-tight">AI Screening Input</h1>
                 <p className="text-slate-500 mt-2">Connect a local fundus camera or upload an image, just like the full OcuVision workflow.</p>
             </div>
+            {stage === 'connect' && scanError && (
+                <div className="max-w-3xl mx-auto mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 flex items-start gap-3">
+                    <i className="fa-solid fa-triangle-exclamation text-rose-500 mt-0.5"></i>
+                    <div className="flex-1">
+                        <p className="text-sm font-bold text-rose-700">Scan could not be completed</p>
+                        <p className="text-sm text-rose-600 mt-1">{scanError}</p>
+                    </div>
+                    <button onClick={() => setScanError(null)} className="text-rose-400 hover:text-rose-600" aria-label="Dismiss">
+                        <i className="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            )}
             {stage === 'connect' && (
                 <ModelPicker
                     models={availableModels}
@@ -1528,6 +1773,17 @@ const Diagnostics = ({ isActive = true, onResultSubmit, onAddRecord, currentDoct
                                     <StatusPill result={result.status} />
                                 </div>
                                 <p className="text-slate-600 leading-relaxed">{result.notes}</p>
+                                {result.glaucomaSuspected && (
+                                    <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                                        <i className="fa-solid fa-eye-low-vision text-amber-600 text-lg mt-0.5"></i>
+                                        <div>
+                                            <p className="font-bold text-amber-800">Glaucoma suspected — structural marker</p>
+                                            <p className="text-sm text-amber-700 leading-relaxed">
+                                                Cup-to-disc ratio {result.cdr != null ? result.cdr.toFixed(2) : 'elevated'} exceeds the glaucoma threshold. Refer for ophthalmology / glaucoma review even though the AI's primary class is {result.diagnosis.replace(/^Detection Result:\s*/i, '')}.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
                                     <MetricCard label="Confidence Score" value={`${result.score}%`} />
                                     <MetricCard label="Severity Level" value={result.status} />
@@ -2076,7 +2332,7 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
     const [pendingAction, setPendingAction] = useState(null); // { type: 'edit' | 'delete', record }
     const [editingRecord, setEditingRecord] = useState(null);
     const [verifiedPassword, setVerifiedPassword] = useState('');
-    const pageSize = 5;
+    const pageSize = 10;
     const severityRank = { Critical: 3, Moderate: 2, Healthy: 1 };
     const diseases = ['All', 'Healthy', 'Diabetic Retinopathy', 'Glaucoma', 'AMD'];
     let visibleRecords = (records || []).filter(record => {
@@ -2145,8 +2401,8 @@ function PatientRegistry({ records, onRecordClick, onUpdateRecord, onDeleteRecor
                     </select>
                 </div>
             </div>
-            <div className="calisto-card rounded-3xl overflow-hidden">
-                <table className="w-full text-left">
+            <div className="calisto-card rounded-3xl overflow-x-auto">
+                <table className="w-full text-left min-w-[640px]">
                     <thead className="bg-white/70 text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] border-b border-slate-100">
                         <tr>
                             <th className="px-8 py-5">Patient Details</th>
@@ -2250,6 +2506,24 @@ function Analytics({ records = [], showToast }) {
         isCustom ? rangeVolume(recentRecords, customStart, customEnd)
                  : reviewedPerDay(recentRecords, days)
     ), [recentRecords, days, isCustom, customStart, customEnd]);
+    // AI Efficiency Metrics are computed live from the records in the active
+    // window (7d / 30d / custom) so the panel always reflects the selected
+    // period rather than static marketing figures.
+    const aiMetrics     = useMemo(() => {
+        const list = recentRecords || [];
+        const n = list.length;
+        const confVals = list
+            .map(r => parseFloat(String(r.confidence).replace('%', '')))
+            .filter(v => Number.isFinite(v));
+        const avgConf = confVals.length ? confVals.reduce((s, v) => s + v, 0) / confVals.length : 0;
+        const unhealthy = list.filter(r => classifyResultBucket(r.result) !== 'Normal').length;
+        return {
+            analyzed: n,
+            avgConfidence: confVals.length ? `${avgConf.toFixed(1)}%` : '—',
+            anomalyRate: n ? `${Math.round((unhealthy / n) * 100)}%` : '—',
+            critical: criticalCount(list)
+        };
+    }, [recentRecords]);
     // Gender distribution is sourced from the FULL Patient Registry, not
     // the active time-window. Demographics are a property of the patient
     // base, not the recent screening volume — limiting the donut to the
@@ -2322,10 +2596,10 @@ function Analytics({ records = [], showToast }) {
                 <div className="xl:col-span-2 calisto-card rounded-3xl p-8">
                     <h3 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-6">AI Efficiency Metrics</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                        <MetricCard label="Sensitivity" value="96.2%" />
-                        <MetricCard label="Specificity" value="94.8%" />
-                        <MetricCard label="Precision" value="92.1%" />
-                        <MetricCard label="Avg Latency" value="1.2s" />
+                        <MetricCard label="Scans Analyzed" value={aiMetrics.analyzed} />
+                        <MetricCard label="Avg Confidence" value={aiMetrics.avgConfidence} />
+                        <MetricCard label="Anomaly Rate" value={aiMetrics.anomalyRate} />
+                        <MetricCard label="Critical Cases" value={aiMetrics.critical} />
                     </div>
                     <div className="h-56 flex items-end gap-3">
                         {trendBars.map((bar, i) => {
@@ -2394,7 +2668,7 @@ function Analytics({ records = [], showToast }) {
         </div>
     );
 }
-function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
+function Settings({ showToast, user, onUpdateUser, onChangePassword, onVerifyPassword }) {
     const [tab, setTab] = useState('account');
     const [twoFactor, setTwoFactor] = useState(false);
     const [aiModels, setAiModels] = useState([]);
@@ -2402,24 +2676,44 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
     const [modelsLoading, setModelsLoading] = useState(false);
     const [modelUploading, setModelUploading] = useState(false);
     const [editingAccount, setEditingAccount] = useState(false);
+    // Holds the pending account changes until the user confirms with their
+    // password. Saving account info is a security-sensitive action, so we
+    // re-verify identity before committing (same pattern as record edit/delete).
+    const [pendingAccountSave, setPendingAccountSave] = useState(null);
     const modelFileRef = useRef();
 
-    async function handleAccountSave(next) {
+    // Step 1: stash the changes and open the password prompt instead of saving.
+    function handleAccountSave(next) {
+        setEditingAccount(false);
+        setPendingAccountSave(next);
+    }
+
+    // Step 2: called by PasswordPrompt only after the password is verified.
+    async function confirmAccountSave() {
+        if (!pendingAccountSave) return;
         try {
-            await onUpdateUser(next);
-            setEditingAccount(false);
+            await onUpdateUser(pendingAccountSave);
             showToast && showToast('Account information updated.');
         } catch (err) {
             // Failure toast is already raised by handleUpdateUser in App.
         }
+        setPendingAccountSave(null);
     }
 
+    // AI Core is an admin-only surface: only administrators may view or change
+    // the model library and the active screening model.
+    const isAdmin = String(user?.type || '').toLowerCase() === 'admin';
     const tabs = [
         { id: 'account', label: 'Staff Account', icon: 'fa-user' },
         { id: 'device', label: 'Device Link', icon: 'fa-desktop' },
         { id: 'security', label: 'Data Privacy', icon: 'fa-shield-halved' },
-        { id: 'system', label: 'AI Core', icon: 'fa-bolt' }
+        ...(isAdmin ? [{ id: 'system', label: 'AI Core', icon: 'fa-bolt' }] : [])
     ];
+
+    // If a non-admin somehow lands on the AI Core tab, send them back to account.
+    useEffect(() => {
+        if (tab === 'system' && !isAdmin) setTab('account');
+    }, [tab, isAdmin]);
 
     const role = user?.type ? user.type.charAt(0).toUpperCase() + user.type.slice(1) : 'Intern / Developer';
     const displayEmail = user?.email || `${user?.username || 'user'}@calisto.com`;
@@ -2499,16 +2793,18 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
     }
 
     return (
-        <div className="max-w-5xl mx-auto calisto-card rounded-3xl overflow-hidden flex min-h-[620px] animate-in fade-in">
-            <aside className="w-72 bg-white/55 border-r border-slate-100 p-6 space-y-2">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-4">Configuration</p>
-                {tabs.map(item => (
-                    <button type="button" key={item.id} onClick={() => setTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition ${tab === item.id ? 'premium-gradient text-white font-bold' : 'text-slate-500 hover:bg-white'}`}>
-                        <i className={`fa-solid ${item.icon} w-5`}></i>{item.label}
-                    </button>
-                ))}
+        <div className="max-w-5xl mx-auto calisto-card rounded-3xl overflow-hidden flex flex-col lg:flex-row lg:min-h-[620px] animate-in fade-in">
+            <aside className="w-full lg:w-72 bg-white/55 border-b lg:border-b-0 lg:border-r border-slate-100 p-4 lg:p-6">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-4 hidden lg:block">Configuration</p>
+                <div className="flex gap-2 overflow-x-auto lg:flex-col lg:space-y-2 lg:gap-0 lg:overflow-visible">
+                    {tabs.map(item => (
+                        <button type="button" key={item.id} onClick={() => setTab(item.id)} className={`shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm whitespace-nowrap transition ${tab === item.id ? 'premium-gradient text-white font-bold' : 'text-slate-500 hover:bg-white'}`}>
+                            <i className={`fa-solid ${item.icon} w-5`}></i>{item.label}
+                        </button>
+                    ))}
+                </div>
             </aside>
-            <section className="flex-1 p-10">
+            <section className="flex-1 min-w-0 p-6 lg:p-10">
                 {tab === 'account' && (
                     <div className="space-y-7">
                         <div className="flex items-start justify-between gap-4">
@@ -2535,7 +2831,7 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                             <ReadOnlyField label="Display Name" value={user?.name || '-'} />
                             <ReadOnlyField label="Username" value={user?.username || '-'} />
                             <ReadOnlyField label="Work Email" value={displayEmail} />
@@ -2548,6 +2844,16 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                             onCancel={() => setEditingAccount(false)}
                             onSubmit={handleAccountSave}
                             showToast={showToast}
+                        />
+
+                        <PasswordPrompt
+                            open={!!pendingAccountSave}
+                            title="Confirm Account Changes"
+                            description="Re-enter your account password to save these changes."
+                            onVerify={onVerifyPassword}
+                            confirmLabel="Verify & Save"
+                            onCancel={() => setPendingAccountSave(null)}
+                            onConfirm={confirmAccountSave}
                         />
                     </div>
                 )}
@@ -2656,11 +2962,11 @@ function Settings({ showToast, user, onUpdateUser, onChangePassword }) {
                             <div className="grid gap-3">
                                 {aiModels.map(model => (
                                     <div key={model.id} className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${model.id === activeModelId ? 'bg-white border-slate-300' : 'bg-white/70 border-slate-100'}`}>
-                                        <div>
-                                            <p className="font-bold text-sm">{model.name}</p>
-                                            <p className="text-xs text-slate-500 mt-1">{model.originalName} - {String(model.type || 'model').toUpperCase()} - {formatFileSize(model.size)}</p>
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-sm break-words">{model.name}</p>
+                                            <p className="text-xs text-slate-500 mt-1 break-words">{model.originalName} - {String(model.type || 'model').toUpperCase()} - {formatFileSize(model.size)}</p>
                                         </div>
-                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${model.id === activeModelId ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                        <span className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${model.id === activeModelId ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                                             {model.id === activeModelId ? 'Active' : 'Available'}
                                         </span>
                                     </div>
@@ -2835,12 +3141,12 @@ function DeviceLinkPanel({ showToast }) {
             )}
 
             {cameras.map(cam => (
-                <div key={cam.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><i className="fa-solid fa-camera-retro"></i></div>
-                        <div><p className="font-bold">{cam.model}</p><p className="text-xs text-emerald-600 font-bold uppercase tracking-widest">Active connection · {cam.connection}</p></div>
+                <div key={cam.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-12 h-12 shrink-0 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><i className="fa-solid fa-camera-retro"></i></div>
+                        <div className="min-w-0"><p className="font-bold break-words">{cam.model}</p><p className="text-xs text-emerald-600 font-bold uppercase tracking-widest break-words">Active connection · {cam.connection}</p></div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 shrink-0">
                         <button onClick={() => editCamera(cam)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600"><i className="fa-solid fa-pen mr-2"></i>Edit</button>
                         <button onClick={() => deleteCamera(cam.id)} className="px-4 py-2 bg-white border border-rose-200 rounded-xl text-xs font-bold text-rose-600"><i className="fa-solid fa-trash mr-2"></i>Delete</button>
                     </div>
@@ -3094,7 +3400,7 @@ function PatientDetailsForm({ open, mode = 'create', initial, recordIdHint, onCa
 
 // Modal for editing the logged-in user's account information.
 function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
-    const [form, setForm] = useState({ name: '', username: '', email: '', avatar: '' });
+    const [form, setForm] = useState({ name: '', username: '', email: '', avatar: '', type: '' });
     const avatarRef = useRef();
 
     useEffect(() => {
@@ -3103,7 +3409,8 @@ function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
             name: user?.name || '',
             username: user?.username || '',
             email: user?.email || `${user?.username || 'user'}@calisto.com`,
-            avatar: user?.avatar || ''
+            avatar: user?.avatar || '',
+            type: user?.type || ''
         });
     }, [open, user]);
 
@@ -3141,7 +3448,8 @@ function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
             name: form.name.trim(),
             username: form.username.trim(),
             email: form.email.trim(),
-            avatar: form.avatar
+            avatar: form.avatar,
+            type: form.type.trim()
         });
     }
 
@@ -3212,6 +3520,18 @@ function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
                             autoComplete="off"
                         />
                     </div>
+                    <div>
+                        <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Title</label>
+                        <input
+                            type="text"
+                            value={form.type}
+                            onChange={e => update('type', e.target.value)}
+                            placeholder="e.g. Doctor, Nurse, Optometrist"
+                            className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm"
+                            autoComplete="off"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Your professional title / role label.</p>
+                    </div>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-1">
@@ -3226,7 +3546,7 @@ function AccountEditModal({ open, user, onCancel, onSubmit, showToast }) {
 // Login/Register Screen (interactive)
 function AuthPage({ onAuth }) {
     const [register, setRegister] = useState(false);
-    const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "" });
+    const [form, setForm] = useState({ username: "", password: "", confirm: "", name: "", type: "", otherTitle: "", appPassword: "" });
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
@@ -3241,23 +3561,37 @@ function AuthPage({ onAuth }) {
         try {
             setLoading(true);
             if (register) {
+                // "others" lets the user type a custom professional title; every
+                // other option is used verbatim.
+                const isOther = form.type.trim().toLowerCase() === 'others';
+                const effectiveType = isOther ? form.otherTitle.trim() : form.type.trim();
                 if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.confirm.trim() || !form.type.trim()) {
                     setError("Please fill in all fields.");
+                    return;
+                }
+                if (isOther && !effectiveType) {
+                    setError("Please enter your title.");
                     return;
                 }
                 if (form.password !== form.confirm) {
                     setError("Passwords don't match.");
                     return;
                 }
-                if (form.password.length < 4) {
-                    setError("Password too short.");
+                if (form.password.length < 8) {
+                    setError("Password must be at least 8 characters.");
+                    return;
+                }
+                const isAdminRole = effectiveType.toLowerCase() === 'admin';
+                if (isAdminRole && !form.appPassword.trim()) {
+                    setError("Administrator registration requires the application password.");
                     return;
                 }
                 const data = await apiJson('/api/register', 'POST', {
                     name: form.name.trim(),
                     username: form.username.trim(),
                     password: form.password,
-                    type: form.type.trim()
+                    type: effectiveType,
+                    ...(isAdminRole ? { appPassword: form.appPassword } : {})
                 });
                 onAuth({ user: data.user, token: data.token, password: form.password });
             } else {
@@ -3282,6 +3616,11 @@ function AuthPage({ onAuth }) {
                     </div>
                     <span className="text-2xl font-bold tracking-tight text-[#1a1a1e]">OCUVISION</span>
                     <small className="text-slate-400 mt-0.5">{register ? "Register new account" : "Login to platform"}</small>
+                    {DEMO_MODE && (
+                        <div className="mt-3 text-center text-[11px] leading-relaxed text-blue-600 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                            <span className="font-bold">Public demo sandbox.</span> Sign in with <em>any</em> username &amp; password to explore. Data is sample-only and stays in your browser — the real database is not connected.
+                        </div>
+                    )}
                 </div>
                 <div className="space-y-5">
                     {register && (
@@ -3345,10 +3684,33 @@ function AuthPage({ onAuth }) {
                                 )}
                             </button>
                         </div>
-                        <input type="text" name="type" value={form.type} onChange={handleChange}
-                                placeholder="Title (e.g. Doctor, Nurse, Optometrist)"
+                        <div className="relative">
+                            <select name="type" value={form.type} onChange={handleChange}
+                                    className="w-full appearance-none px-4 py-3 pr-10 border rounded-lg bg-white text-slate-700 focus:ring-blue-200 focus:outline-none cursor-pointer">
+                                <option value="">Select title / role...</option>
+                                <option value="Optometrist">Optometrist</option>
+                                <option value="Optician">Optician</option>
+                                <option value="admin">Admin</option>
+                                <option value="others">Others</option>
+                            </select>
+                            <i className="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                        </div>
+                        {form.type.trim().toLowerCase() === 'others' && (
+                            <input type="text" name="otherTitle" value={form.otherTitle} onChange={handleChange}
+                                placeholder="Enter your title (e.g. Nurse, Technician)"
                                 className="w-full px-4 py-3 border rounded-lg focus:ring-blue-200 focus:outline-none"
-                        />
+                            />
+                        )}
+                        {form.type.trim().toLowerCase() === 'admin' && (
+                            <div className="space-y-1">
+                                <input type={showPassword ? "text" : "password"} name="appPassword" value={form.appPassword} onChange={handleChange}
+                                    placeholder="Application password (required for Admin)"
+                                    autoComplete="off"
+                                    className="w-full px-4 py-3 border border-amber-300 bg-amber-50 rounded-lg focus:ring-amber-200 focus:outline-none"
+                                />
+                                <p className="text-[11px] text-amber-600 pl-1">Admin accounts unlock AI Core and require the Calisto application password.</p>
+                            </div>
+                        )}
                         </>
                     )}
                 </div>
@@ -3361,7 +3723,7 @@ function AuthPage({ onAuth }) {
                     <button
                         type="button"
                         className="underline text-blue-500 hover:text-blue-700"
-                        onClick={() => { setRegister(r=>!r); setError(""); setForm({ username:"", password:"", confirm:"", name:"", type:"" }); }}
+                        onClick={() => { setRegister(r=>!r); setError(""); setForm({ username:"", password:"", confirm:"", name:"", type:"", otherTitle:"", appPassword:"" }); }}
                     >
                         {register ? "Login" : "Register"}
                     </button>
@@ -3802,6 +4164,17 @@ function RecordModal({ record, onClose }) {
     }, [record]);
     const interp = useMemo(() => buildInterpretation(record, features), [record, features]);
 
+    // Persisted glaucoma safety-net flag. Only trust the CDR the AI actually
+    // measured (record.features), never the fabricated baseline used for
+    // legacy seed records, and never double-flag a record already diagnosed
+    // as glaucoma.
+    const glaucomaFlagCdr = useMemo(() => {
+        const raw = record.features && typeof record.features === 'object' ? record.features : null;
+        const cdr = raw ? Number(raw.ONH_CupToDiscRatio) : NaN;
+        const isGlaucomaResult = /glaucoma/i.test(record.result || '');
+        return (Number.isFinite(cdr) && cdr >= 0.60 && !isGlaucomaResult) ? cdr : null;
+    }, [record]);
+
     useEffect(() => {
         const onEsc = e => { if (e.key === 'Escape') onClose(); };
         document.addEventListener('keydown', onEsc);
@@ -3863,6 +4236,18 @@ function RecordModal({ record, onClose }) {
                         </ReportInfoCard>
                     </div>
 
+                    {glaucomaFlagCdr != null && (
+                        <div className="ocu-print-section flex items-start gap-3 rounded-3xl border border-amber-300 bg-amber-50 p-5">
+                            <i className="fa-solid fa-eye-low-vision text-amber-600 text-lg mt-0.5"></i>
+                            <div>
+                                <p className="font-bold text-amber-800">Glaucoma suspected — elevated cup-to-disc ratio</p>
+                                <p className="text-sm text-amber-700 leading-relaxed">
+                                    Measured cup-to-disc ratio of <strong>{glaucomaFlagCdr.toFixed(2)}</strong> exceeds the 0.60 glaucoma threshold. The AI's primary class was <strong>{record.result}</strong>, but this structural finding warrants ophthalmology / glaucoma review.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="ocu-print-section p-6 rounded-3xl border border-slate-100 bg-slate-50">
                         <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold mb-2">Clinical Interpretation</p>
                         <p className="text-sm text-slate-700 leading-relaxed">{interp.summary}</p>
@@ -3914,9 +4299,15 @@ function RecordModal({ record, onClose }) {
                                     : <FundusSVG mode="onh" cdr={features.ONH_CupToDiscRatio} condition={record.result} seed={seed} />}
                             </FundusPanel>
                         </div>
-                        <div className="mt-3 flex items-center gap-5 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
-                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-lime-400"></span>Optic Disc</span>
-                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Optic Cup</span>
+                        <div className="mt-3 flex items-center justify-between gap-5 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                            <div className="flex items-center gap-5">
+                                <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-lime-400"></span>Optic Disc</span>
+                                <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Optic Cup</span>
+                            </div>
+                            <span className="flex items-center gap-2 text-xs font-bold text-slate-800 normal-case tracking-normal">
+                                <i className={`fa-solid ${record.capture_device ? 'fa-camera-retro text-blue-500' : 'fa-upload text-slate-400'}`}></i>
+                                {record.capture_device ? `Captured by ${record.capture_device}` : 'Uploaded from local drive'}
+                            </span>
                         </div>
                     </div>
 
@@ -3999,8 +4390,27 @@ const App = () => {
     const [user, setUser] = useState(null);
     const [records, setRecords] = useState([]);
     const [view, setView] = useState('dashboard');
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    // Notifications are derived from REAL activity — today's screenings — rather
+    // than static mock data. Critical findings are flagged. When there is no
+    // activity today the bell simply shows "No notifications!".
+    const [notifsCleared, setNotifsCleared] = useState(false);
     const [lastScanResult, setLastScanResult] = useState(null);
+
+    const notifications = useMemo(() => {
+        if (notifsCleared) return [];
+        const today = todayYMD();
+        return (records || [])
+            .filter(r => _toYMD(r.date) === today)
+            .slice(0, 8)
+            .map(r => ({
+                id: r.id,
+                message: isCriticalRecord(r)
+                    ? `Critical: ${r.result} detected for ${r.patient}.`
+                    : `Screening completed for ${r.patient} — ${r.result}.`,
+                time: 'Today'
+            }));
+    }, [records, notifsCleared]);
 
     // Record panel modal
     const [modalRecord, setModalRecord] = useState(null);
@@ -4008,27 +4418,96 @@ const App = () => {
     // Toast system
     const [ToastComponent, triggerToast] = useToast();
 
-    // On mount, if we already have a saved token, hydrate the user and records.
-    useEffect(() => {
+    // Hydrate the session from the current auth token. Used on mount and again
+    // whenever the Calisto host app injects an SSO token at runtime.
+    async function hydrateSession() {
         const token = getAuthToken();
-        if (!token) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const me = await apiRequest('/api/users/me');
-                if (cancelled) return;
-                setUser(me.user);
-                const rec = await apiRequest('/api/records');
-                if (cancelled) return;
-                setRecords(rec.records || []);
-                setBootState('app');
-            } catch (err) {
-                if (cancelled) return;
-                setAuthToken('');
-                setBootState('auth');
+        if (!token) { setBootState('auth'); return; }
+        setBootState('loading');
+        try {
+            const me = await apiRequest('/api/users/me');
+            setUser(me.user);
+            const rec = await apiRequest('/api/records');
+            setRecords(rec.records || []);
+            setBootState('app');
+            postToParent({ type: 'ocuvision-authenticated', user: me.user
+                ? { username: me.user.username, name: me.user.name, type: me.user.type } : null });
+        } catch (err) {
+            setAuthToken('');
+            setUser(null);
+            setBootState('auth');
+        }
+    }
+
+    // On mount: wire up Calisto host-app integration (embed flag, SSO, events),
+    // then restore any existing session.
+    useEffect(() => {
+        try {
+            if (isEmbedded()) {
+                document.body.classList.add('ocu-embed');
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('chrome') === '0') document.body.classList.add('ocu-embed-chromeless');
             }
-        })();
-        return () => { cancelled = true; };
+        } catch (e) {}
+
+        // 1) SSO token via query param (?token=...) — webview / deep-link entry.
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const qToken = params.get('token');
+            if (qToken) {
+                setAuthToken(qToken);
+                params.delete('token'); // never leave a token in history/logs
+                const clean = window.location.pathname +
+                    (params.toString() ? ('?' + params.toString()) : '') + window.location.hash;
+                window.history.replaceState({}, document.title, clean);
+            }
+        } catch (e) {}
+
+        // 2) SSO token via postMessage from the trusted parent (Calisto) app.
+        function onHostMessage(ev) {
+            if (!isTrustedParentOrigin(ev.origin)) return;
+            const data = (ev && ev.data) || {};
+            if (data.type === 'calisto-auth' && data.token) {
+                setAuthToken(data.token);
+                hydrateSession();
+            } else if (data.type === 'calisto-logout') {
+                onLogout();
+            }
+        }
+        window.addEventListener('message', onHostMessage);
+
+        // 3) Native mobile bridge: expose a stable global the Calisto app can call
+        //    directly from native code (Android evaluateJavascript / iOS
+        //    evaluateJavaScript), e.g. window.OcuVision.auth('<token>').
+        window.OcuVision = {
+            auth(token) { if (token) { setAuthToken(token); hydrateSession(); } },
+            logout() { onLogout(); },
+            isAuthenticated() { return !!getAuthToken(); },
+            version: '1.0'
+        };
+
+        // 4) Announce readiness so the host knows it can send the SSO token.
+        postToParent({ type: 'ocuvision-ready' });
+
+        // 5) Restore any existing session.
+        hydrateSession();
+
+        return () => window.removeEventListener('message', onHostMessage);
+    }, []);
+
+    // When any authenticated request returns 401 (token expired, revoked, or
+    // invalidated by a login on another device), drop back to the login screen
+    // so the user can re-authenticate instead of being stuck on a dead session.
+    useEffect(() => {
+        function onExpired() {
+            setUser(null);
+            setRecords([]);
+            setModalRecord(null);
+            setBootState('auth');
+            triggerToast('Your session ended. Please sign in again.');
+        }
+        window.addEventListener('ocuvision-session-expired', onExpired);
+        return () => window.removeEventListener('ocuvision-session-expired', onExpired);
     }, []);
 
     async function loadRecords() {
@@ -4051,6 +4530,8 @@ const App = () => {
             triggerToast(err.message || 'Could not load records.');
         }
         setBootState('app');
+        postToParent({ type: 'ocuvision-authenticated', user: authedUser
+            ? { username: authedUser.username, name: authedUser.name, type: authedUser.type } : null });
         triggerToast('Welcome, ' + (authedUser?.name || authedUser?.username || 'user') + '!');
     }
 
@@ -4065,6 +4546,7 @@ const App = () => {
         setRecords([]);
         setView('dashboard');
         setBootState('auth');
+        postToParent({ type: 'ocuvision-logout' });
         triggerToast("You have been logged out.");
     }
 
@@ -4086,6 +4568,12 @@ const App = () => {
         try {
             const data = await apiJson('/api/records', 'POST', record);
             setRecords(prev => [data.record, ...prev]);
+            setNotifsCleared(false); // new activity — re-surface notifications
+            const r = data.record || {};
+            postToParent({ type: 'ocuvision-screening-complete', record: {
+                id: r.id, result: r.result, severity: r.severity,
+                confidence: r.confidence, date: r.date, captureDevice: r.capture_device
+            }});
             return data.record;
         } catch (err) {
             triggerToast(err.message || 'Could not save record.');
@@ -4129,16 +4617,29 @@ const App = () => {
 
     // For more interactive experience, pass in handlers for all key actions
     return (
-        <div className="app-shell flex min-h-screen">
-            <Sidebar currentView={view} setView={setView} user={user} onLogout={onLogout} />
+        <div className="app-shell flex min-h-screen overflow-x-hidden">
+            <Sidebar currentView={view} setView={setView} user={user} onLogout={onLogout} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+            {/* Mobile drawer backdrop */}
+            {sidebarOpen && (
+                <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true"></div>
+            )}
             {/* Main content */}
-            <main className="flex-1 ml-72 p-12 lg:p-16">
-                <header className="flex justify-between items-center mb-12">
-                    <GlobalSearch records={records} onPickRecord={openRecord} setView={setView} />
-                    <div className="flex items-center gap-6">
+            <main className="flex-1 w-full min-w-0 lg:ml-72 p-5 sm:p-8 lg:p-16">
+                <header className="flex justify-between items-center gap-3 mb-8 lg:mb-12">
+                    <button
+                        onClick={() => setSidebarOpen(true)}
+                        className="lg:hidden shrink-0 w-11 h-11 rounded-xl bg-white border border-slate-100 text-slate-600 flex items-center justify-center shadow-sm"
+                        aria-label="Open menu"
+                    >
+                        <i className="fa-solid fa-bars text-lg"></i>
+                    </button>
+                    <div className="flex-1 min-w-0">
+                        <GlobalSearch records={records} onPickRecord={openRecord} setView={setView} />
+                    </div>
+                    <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                         <NotificationBell
                             notifications={notifications}
-                            clearAll={() => { setNotifications([]); triggerToast("Notifications cleared!") }}
+                            clearAll={() => { setNotifsCleared(true); triggerToast("Notifications cleared!") }}
                         />
                         <div className="h-6 w-[1px] bg-slate-200"></div>
                         <div className="text-right hidden sm:block">
@@ -4190,6 +4691,7 @@ const App = () => {
                     user={user}
                     onUpdateUser={handleUpdateUser}
                     onChangePassword={handleChangePassword}
+                    onVerifyPassword={verifyPassword}
                   />
                 </div>
                 <ToastComponent />
